@@ -52,7 +52,12 @@ export function getListingAllImages(listing: UmkmListing): string[] {
 
 export function buildWhatsAppUrl(phone: string, message: string): string {
   const digits = phone.replace(/[^0-9]/g, '');
-  const normalized = digits.startsWith('0') ? `62${digits.slice(1)}` : digits;
+  let normalized = digits;
+  if (digits.startsWith('0')) {
+    normalized = `62${digits.slice(1)}`;
+  } else if (digits.startsWith('8')) {
+    normalized = `62${digits}`;
+  }
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
@@ -478,19 +483,30 @@ export function isValidEmailAddress(email: string): boolean {
   return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(trimmed);
 }
 
+export function isValidContactPhone(phone: string): boolean {
+  const digits = phone.replace(/[^0-9]/g, '');
+  return digits.length >= 8 && digits.length <= 15;
+}
+
 export function validateContactMessageForm(
   form: ContactMessageFormData
 ): Partial<Record<keyof ContactMessageFormData, string>> {
   const errors: Partial<Record<keyof ContactMessageFormData, string>> = {};
   const name = form.senderName.trim();
+  const whatsappDigits = form.whatsapp.replace(/[^0-9]/g, '');
   const message = form.message.trim();
   const email = form.email.trim();
+  const hasValidEmail = email.length > 0 && isValidEmailAddress(email);
 
   if (name.length < 2 || name.length > 80) {
     errors.senderName = 'Masukkan nama lengkap Anda (2–80 karakter).';
   }
-  if (!isValidIndonesianPhone(form.whatsapp)) {
-    errors.whatsapp = 'Masukkan nomor WhatsApp aktif yang valid (contoh: 081234567890).';
+  if (whatsappDigits.length > 0) {
+    if (!isValidContactPhone(form.whatsapp)) {
+      errors.whatsapp = 'Masukkan nomor WhatsApp/HP aktif 8–15 digit (contoh: 081234567890).';
+    }
+  } else if (!hasValidEmail) {
+    errors.whatsapp = 'Isi nomor WhatsApp/HP aktif atau alamat email yang valid agar admin bisa membalas.';
   }
   if (email.length > 0 && !isValidEmailAddress(email)) {
     errors.email = 'Format alamat email tidak valid.';
@@ -498,8 +514,8 @@ export function validateContactMessageForm(
   if (!CONTACT_TOPICS.includes(form.subject)) {
     errors.subject = 'Pilih topik pesan yang tersedia.';
   }
-  if (message.length < 10 || message.length > 1500) {
-    errors.message = 'Isi pesan minimal 10 karakter (maksimal 1.500 karakter).';
+  if (message.length < 2 || message.length > 1500) {
+    errors.message = 'Isi pesan minimal 2 karakter (maksimal 1.500 karakter).';
   }
 
   return errors;

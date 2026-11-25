@@ -32,6 +32,10 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
     const validationErrors = validateContactMessageForm(form);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+      const firstError = Object.values(validationErrors).find(Boolean);
+      if (firstError) {
+        setSubmitError(firstError);
+      }
       return;
     }
 
@@ -179,6 +183,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     onChange={(e) => {
                       setForm({ ...form, senderName: e.target.value });
                       if (errors.senderName) setErrors({ ...errors, senderName: undefined });
+                      if (submitError) setSubmitError(null);
                     }}
                     placeholder="Nama lengkap Anda"
                     className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
@@ -193,7 +198,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     htmlFor="contact-whatsapp"
                     className="block text-xs font-semibold text-[#0F2744] mb-1.5"
                   >
-                    Nomor WhatsApp Aktif
+                    Nomor WhatsApp / HP
                   </label>
                   <input
                     id="contact-whatsapp"
@@ -202,6 +207,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     onChange={(e) => {
                       setForm({ ...form, whatsapp: e.target.value });
                       if (errors.whatsapp) setErrors({ ...errors, whatsapp: undefined });
+                      if (submitError) setSubmitError(null);
                     }}
                     placeholder="081234567890"
                     className="w-full px-3.5 py-2.5 text-sm font-mono bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
@@ -218,7 +224,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     htmlFor="contact-email"
                     className="block text-xs font-semibold text-[#0F2744] mb-1.5"
                   >
-                    Email (Opsional)
+                    Email (Opsional jika WA diisi)
                   </label>
                   <input
                     id="contact-email"
@@ -226,7 +232,10 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     value={form.email}
                     onChange={(e) => {
                       setForm({ ...form, email: e.target.value });
-                      if (errors.email) setErrors({ ...errors, email: undefined });
+                      if (errors.email || errors.whatsapp) {
+                        setErrors({ ...errors, email: undefined, whatsapp: undefined });
+                      }
+                      if (submitError) setSubmitError(null);
                     }}
                     placeholder="nama@contoh.id"
                     className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
@@ -249,6 +258,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     onChange={(e) => {
                       setForm({ ...form, subject: e.target.value as ContactTopic });
                       if (errors.subject) setErrors({ ...errors, subject: undefined });
+                      if (submitError) setSubmitError(null);
                     }}
                     className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744] cursor-pointer"
                   >
@@ -284,6 +294,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                   onChange={(e) => {
                     setForm({ ...form, message: e.target.value });
                     if (errors.message) setErrors({ ...errors, message: undefined });
+                    if (submitError) setSubmitError(null);
                   }}
                   placeholder="Tuliskan pertanyaan, kebutuhan kemitraan, atau pesan Anda untuk admin CISAGA HUB..."
                   className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"

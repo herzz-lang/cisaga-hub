@@ -204,29 +204,52 @@ test('formatRupiah and buildWhatsAppUrl format cleanly', () => {
     buildWhatsAppUrl('0812-3456-7890', 'Tes'),
     'https://wa.me/6281234567890?text=Tes'
   );
+  assert.equal(
+    buildWhatsAppUrl('81234567890', 'Halo'),
+    'https://wa.me/6281234567890?text=Halo'
+  );
 });
 
-test('validateContactMessageForm validates sender, whatsapp, optional email, and message length', () => {
+test('validateContactMessageForm validates sender, flexible phone or email, and message length', () => {
   const invalid = validateContactMessageForm({
     senderName: 'A',
     whatsapp: '123',
     email: 'bukan-email',
     subject: 'Pertanyaan Umum',
-    message: 'Singkat',
+    message: 'A',
   });
   assert.ok(invalid.senderName);
   assert.ok(invalid.whatsapp);
   assert.ok(invalid.email);
   assert.ok(invalid.message);
 
-  const validNoEmail = validateContactMessageForm({
+  const missingBothContacts = validateContactMessageForm({
+    senderName: 'Dede',
+    whatsapp: '',
+    email: '',
+    subject: 'Pertanyaan Umum',
+    message: 'Tes',
+  });
+  assert.ok(missingBothContacts.whatsapp);
+  assert.equal(missingBothContacts.message, undefined);
+
+  const validShortPhoneNoZero = validateContactMessageForm({
     senderName: 'Dede Kurniawan',
-    whatsapp: '081234567890',
+    whatsapp: '81234567890',
     email: '',
     subject: 'Promosi UMKM Premium',
-    message: 'Saya ingin menanyakan syarat promosi UMKM Premium di halaman utama CISAGA HUB.',
+    message: 'Tes pesan singkat',
   });
-  assert.deepEqual(validNoEmail, {});
+  assert.deepEqual(validShortPhoneNoZero, {});
+
+  const validEmailOnly = validateContactMessageForm({
+    senderName: 'Siti Rahma',
+    whatsapp: '',
+    email: 'siti@contoh.id',
+    subject: 'Pertanyaan Umum',
+    message: 'Halo admin',
+  });
+  assert.deepEqual(validEmailOnly, {});
 });
 
 test('isDeveloperAdminPath grants admin view entry only on dedicated developer paths', () => {

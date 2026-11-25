@@ -71,6 +71,11 @@ function isValidIndonesianPhone(phone: string): boolean {
   );
 }
 
+function isValidContactPhone(phone: string): boolean {
+  const digits = phone.replace(/[^0-9]/g, '');
+  return digits.length >= 8 && digits.length <= 15;
+}
+
 function getDefaultImageForCategory(category: BusinessCategory): string {
   switch (category) {
     case 'Agribisnis':
@@ -615,33 +620,45 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
   const createContactMessage = (raw: Partial<ContactMessageFormData>): ContactMessage => {
     const senderName = typeof raw.senderName === 'string' ? raw.senderName.trim() : '';
     const whatsapp = typeof raw.whatsapp === 'string' ? raw.whatsapp.trim() : '';
+    const whatsappDigits = whatsapp.replace(/[^0-9]/g, '');
     const email = typeof raw.email === 'string' ? raw.email.trim() : '';
-    const subject = VALID_CONTACT_TOPICS.includes(raw.subject as ContactTopic)
-      ? (raw.subject as ContactTopic)
-      : null;
+    const rawSubject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
+    const subject: ContactTopic | null =
+      rawSubject === ''
+        ? VALID_CONTACT_TOPICS[0]
+        : VALID_CONTACT_TOPICS.includes(rawSubject as ContactTopic)
+          ? (rawSubject as ContactTopic)
+          : null;
     const message = typeof raw.message === 'string' ? raw.message.trim() : '';
 
     if (senderName.length < 2 || senderName.length > 80) {
       throw new StoreHttpError(400, 'Nama pengirim harus 2–80 karakter.');
     }
-    if (!isValidIndonesianPhone(whatsapp)) {
-      throw new StoreHttpError(400, 'Masukkan nomor WhatsApp aktif yang valid.');
-    }
     if (email.length > 0 && !isValidOptionalEmail(email)) {
       throw new StoreHttpError(400, 'Format alamat email tidak valid.');
+    }
+    if (whatsappDigits.length > 0) {
+      if (!isValidContactPhone(whatsapp)) {
+        throw new StoreHttpError(400, 'Masukkan nomor WhatsApp atau telepon aktif (8–15 digit).');
+      }
+    } else if (!email) {
+      throw new StoreHttpError(
+        400,
+        'Isi nomor WhatsApp/HP aktif atau alamat email agar admin bisa membalas.'
+      );
     }
     if (!subject) {
       throw new StoreHttpError(400, 'Topik pesan tidak valid.');
     }
-    if (message.length < 10 || message.length > 1500) {
-      throw new StoreHttpError(400, 'Isi pesan harus 10–1.500 karakter.');
+    if (message.length < 2 || message.length > 1500) {
+      throw new StoreHttpError(400, 'Isi pesan harus 2–1.500 karakter.');
     }
 
     const randomSuffix = Math.random().toString(36).slice(2, 6);
     const created: ContactMessage = {
       id: `msg-${Date.now()}-${randomSuffix}`,
       senderName,
-      whatsapp: whatsapp.replace(/[^0-9]/g, ''),
+      whatsapp: whatsappDigits,
       ...(email ? { email } : {}),
       subject,
       message,

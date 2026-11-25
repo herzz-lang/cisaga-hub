@@ -265,13 +265,13 @@ test('server store persists uploaded photo paths, gallery images, and menu/servi
   }
 });
 
-test('server store creates, lists, updates status, and deletes contact messages with strict validation', () => {
+test('server store creates, lists, updates status, and deletes contact messages with flexible contact channels', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cisaga-contact-test-'));
   try {
     const store = createServerStore(tempDir);
     assert.equal(store.listContactMessages().length, 0);
 
-    // Rejects invalid email or short message or unknown subject
+    // Rejects invalid email, missing contact methods, or unknown subject
     assert.throws(
       () =>
         store.createContactMessage({
@@ -279,9 +279,21 @@ test('server store creates, lists, updates status, and deletes contact messages 
           whatsapp: '081234567890',
           email: 'invalid-email',
           subject: 'Pertanyaan Umum',
-          message: 'Pesan valid lebih dari sepuluh karakter.',
+          message: 'Halo admin',
         }),
       /Format alamat email tidak valid/
+    );
+
+    assert.throws(
+      () =>
+        store.createContactMessage({
+          senderName: 'Rina',
+          whatsapp: '',
+          email: '',
+          subject: 'Pertanyaan Umum',
+          message: 'Halo admin',
+        }),
+      /Isi nomor WhatsApp/
     );
 
     assert.throws(
@@ -291,10 +303,32 @@ test('server store creates, lists, updates status, and deletes contact messages 
           whatsapp: '081234567890',
           email: '',
           subject: 'Topik Asing' as never,
-          message: 'Pesan valid lebih dari sepuluh karakter.',
+          message: 'Halo admin',
         }),
       /Topik pesan tidak valid/
     );
+
+    // Allows short message & phone without leading 0
+    const shortMsg = store.createContactMessage({
+      senderName: 'Budi',
+      whatsapp: '81234567890',
+      email: '',
+      subject: 'Pertanyaan Umum',
+      message: 'Tes',
+    });
+    assert.equal(shortMsg.whatsapp, '81234567890');
+    assert.equal(shortMsg.message, 'Tes');
+
+    // Allows email-only submission without WhatsApp
+    const emailOnlyMsg = store.createContactMessage({
+      senderName: 'Dewi',
+      whatsapp: '',
+      email: 'dewi@contoh.id',
+      subject: 'Bantuan Pendaftaran',
+      message: 'Mohon bantuannya',
+    });
+    assert.equal(emailOnlyMsg.whatsapp, '');
+    assert.equal(emailOnlyMsg.email, 'dewi@contoh.id');
 
     const created = store.createContactMessage({
       senderName: 'Hendra Wijaya',
@@ -305,11 +339,11 @@ test('server store creates, lists, updates status, and deletes contact messages 
     });
     assert.equal(created.status, 'Baru');
     assert.equal(created.whatsapp, '081234567890');
-    assert.equal(store.listContactMessages().length, 1);
+    assert.equal(store.listContactMessages().length, 3);
 
     // Re-opening store preserves persisted messages on disk
     const reloaded = createServerStore(tempDir);
-    assert.equal(reloaded.listContactMessages().length, 1);
+    assert.equal(reloaded.listContactMessages().length, 3);
     assert.equal(reloaded.listContactMessages()[0].senderName, 'Hendra Wijaya');
 
     const markedRead = reloaded.updateContactMessageStatus(created.id, 'Dibaca');
@@ -324,7 +358,7 @@ test('server store creates, lists, updates status, and deletes contact messages 
     );
 
     reloaded.deleteContactMessage(created.id);
-    assert.equal(reloaded.listContactMessages().length, 0);
+    assert.equal(reloaded.listContactMessages().length, 2);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

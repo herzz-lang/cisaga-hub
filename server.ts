@@ -53,7 +53,7 @@ function clearAuthAttempts(ipKey: string): void {
 }
 
 const contactSubmissions = new Map<string, RateLimitEntry>();
-const MAX_CONTACT_SUBMISSIONS = 15;
+const MAX_CONTACT_SUBMISSIONS = 60;
 
 function checkAndRecordContactRateLimit(ipKey: string): boolean {
   const now = Date.now();
@@ -108,6 +108,7 @@ function handleApiError(err: unknown, res: Response): void {
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '4mb' }));
 
   app.get('/api/health', (_req, res) => {

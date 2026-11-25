@@ -557,10 +557,13 @@ export function AdminPanelView({
           ) : (
             <div className="space-y-4">
               {filteredMessages.map((msg) => {
-                const replyWaUrl = buildWhatsAppUrl(
-                  msg.whatsapp,
-                  `Halo ${msg.senderName}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${msg.subject}".`
-                );
+                const hasWhatsapp = msg.whatsapp.replace(/[^0-9]/g, '').length > 0;
+                const replyWaUrl = hasWhatsapp
+                  ? buildWhatsAppUrl(
+                      msg.whatsapp,
+                      `Halo ${msg.senderName}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${msg.subject}".`
+                    )
+                  : '';
                 const hasValidEmail = Boolean(msg.email && isValidEmailAddress(msg.email));
 
                 return (
@@ -592,21 +595,24 @@ export function AdminPanelView({
                         </div>
                         <h3 className="text-base font-bold text-[#0F2744]">{msg.senderName}</h3>
                         <p className="text-xs text-[#475569] mt-0.5 font-mono tabular-nums">
-                          WA: {msg.whatsapp}
-                          {hasValidEmail && msg.email ? ` · Email: ${msg.email}` : ''}
+                          {hasWhatsapp ? `WA: ${msg.whatsapp}` : ''}
+                          {hasWhatsapp && hasValidEmail && msg.email ? ' · ' : ''}
+                          {hasValidEmail && msg.email ? `Email: ${msg.email}` : ''}
                         </p>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <a
-                          href={replyWaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-md transition-colors whitespace-nowrap"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Balas WA</span>
-                        </a>
+                        {hasWhatsapp && (
+                          <a
+                            href={replyWaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-md transition-colors whitespace-nowrap"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Balas WA</span>
+                          </a>
+                        )}
 
                         {hasValidEmail && msg.email && (
                           <a
