@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AboutCisagaHubSection } from './components/AboutCisagaHubSection';
 import { AdminLoginView } from './components/AdminLoginView';
 import { AdminPanelView } from './components/AdminPanelView';
@@ -28,6 +28,7 @@ import type {
 import {
   filterAndSortListings,
   getPremiumTopListings,
+  isDeveloperAdminPath,
   isListingSaved,
   removeSavedPromoItem,
   saveListingToPromo,
@@ -49,7 +50,11 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<AppView>('public');
+  const [activeView, setActiveView] = useState<AppView>(() =>
+    typeof window !== 'undefined' && isDeveloperAdminPath(window.location.pathname)
+      ? 'admin'
+      : 'public'
+  );
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('Semua');
   const [tierFilter, setTierFilter] = useState<'all' | UmkmTier>('all');
   const [selectedVillage, setSelectedVillage] = useState<string>('Semua Desa');
@@ -68,6 +73,8 @@ export default function App() {
 
   // Developer-only admin session state (held strictly in JS memory, never in storage)
   const [adminToken, setAdminToken] = useState<string | null>(null);
+  const adminTokenRef = useRef<string | null>(null);
+  adminTokenRef.current = adminToken;
   const [expectedAdminUsername, setExpectedAdminUsername] = useState<string>('admin');
   const [authMode, setAuthMode] = useState<AdminAuthMode>('loading');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -230,9 +237,31 @@ export default function App() {
     return baseSum + addedCount;
   }, [publicListings]);
 
+  useEffect(() => {
+    if (isDeveloperAdminPath(window.location.pathname)) {
+      void refreshAuthStatus(adminTokenRef.current);
+    }
+    const handlePopState = () => {
+      if (isDeveloperAdminPath(window.location.pathname)) {
+        setFeedbackMessage(null);
+        setAuthError(null);
+        setActiveView('admin');
+        void refreshAuthStatus(adminTokenRef.current);
+      } else {
+        setActiveView('public');
+        void fetchPublicListings();
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [fetchPublicListings, refreshAuthStatus]);
+
   const handleNavigatePublic = (hash?: string) => {
     setFeedbackMessage(null);
     setActiveView('public');
+    if (isDeveloperAdminPath(window.location.pathname)) {
+      window.history.pushState({}, '', '/');
+    }
     void fetchPublicListings();
     if (hash) {
       window.requestAnimationFrame(() => {
@@ -245,14 +274,6 @@ export default function App() {
         }
       });
     }
-  };
-
-  const handleOpenAdmin = () => {
-    setFeedbackMessage(null);
-    setAuthError(null);
-    setActiveView('admin');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    void refreshAuthStatus(adminToken);
   };
 
   const handleAdminSetupSubmit = async (
@@ -573,7 +594,6 @@ export default function App() {
         activeView={activeView}
         savedCount={savedItems.length}
         onNavigatePublic={handleNavigatePublic}
-        onOpenAdmin={handleOpenAdmin}
         onOpenSaved={() => {
           setFeedbackMessage(null);
           setIsSavedDrawerOpen(true);
@@ -659,7 +679,6 @@ export default function App() {
             <PartnerRegistrationSection
               villages={CISAGA_VILLAGES}
               onRegisterFreeUmkm={handleRegisterFreeUmkm}
-              onOpenAdmin={handleOpenAdmin}
             />
 
             <ContactSection onSubmitContactMessage={handleSubmitContactMessage} />
@@ -667,7 +686,7 @@ export default function App() {
         )}
       </main>
 
-      <Footer onNavigatePublic={handleNavigatePublic} onOpenAdmin={handleOpenAdmin} />
+      <Footer onNavigatePublic={handleNavigatePublic} />
 
       <ProductModal
         listing={selectedListing}

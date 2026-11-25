@@ -11,6 +11,7 @@ import {
   formatRupiah,
   getListingAllImages,
   getPremiumTopListings,
+  isDeveloperAdminPath,
   toggleListingTier,
   updateAdminListingEntry,
   validateAdminUmkmForm,
@@ -226,5 +227,13 @@ test('validateContactMessageForm validates sender, whatsapp, optional email, and
     message: 'Saya ingin menanyakan syarat promosi UMKM Premium di halaman utama CISAGA HUB.',
   });
   assert.deepEqual(validNoEmail, {});
+});
+
+test('isDeveloperAdminPath grants admin view entry only on dedicated developer paths', () => {
+  assert.equal(isDeveloperAdminPath('/'), false);
+  assert.equal(isDeveloperAdminPath('/katalog'), false);
+  assert.equal(isDeveloperAdminPath('/admin'), true);
+  assert.equal(isDeveloperAdminPath('/admin/'), true);
+  assert.equal(isDeveloperAdminPath('/portal-developer'), true);
 });
 

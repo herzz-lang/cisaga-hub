@@ -517,3 +517,8 @@ export function formatContactDate(isoTimestamp: string): string {
   });
 }
 
+export function isDeveloperAdminPath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, '').toLowerCase();
+  return normalized === '/admin' || normalized === '/portal-developer';
+}
+

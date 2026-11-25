@@ -2,10 +2,9 @@ import { BrandLogo } from './BrandLogo';
 
 interface FooterProps {
   onNavigatePublic: (hash?: string) => void;
-  onOpenAdmin: () => void;
 }
 
-export function Footer({ onNavigatePublic, onOpenAdmin }: FooterProps) {
+export function Footer({ onNavigatePublic }: FooterProps) {
   return (
     <footer id="kontak" className="bg-white border-t border-[#E2E8F0] py-12">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6">
@@ -97,15 +96,6 @@ export function Footer({ onNavigatePublic, onOpenAdmin }: FooterProps) {
                 >
                   Hubungi Saya
                 </a>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={onOpenAdmin}
-                  className="hover:text-[#0F2744] transition-colors cursor-pointer"
-                >
-                  Panel Admin Developer
-                </button>
               </li>
             </ul>
           </div>

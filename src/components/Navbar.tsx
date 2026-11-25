@@ -1,4 +1,4 @@
-import { ArrowLeft, Bookmark, Menu, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Bookmark, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { BrandLogo } from './BrandLogo';
 
@@ -8,7 +8,6 @@ interface NavbarProps {
   activeView: AppView;
   savedCount: number;
   onNavigatePublic: (hash?: string) => void;
-  onOpenAdmin: () => void;
   onOpenSaved: () => void;
 }
 
@@ -16,7 +15,6 @@ export function Navbar({
   activeView,
   savedCount,
   onNavigatePublic,
-  onOpenAdmin,
   onOpenSaved,
 }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -97,22 +95,6 @@ export function Navbar({
           >
             Hubungi Saya
           </a>
-          <button
-            type="button"
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onOpenAdmin();
-            }}
-            aria-current={activeView === 'admin' ? 'page' : undefined}
-            className={`inline-flex items-center gap-1.5 transition-colors duration-150 whitespace-nowrap shrink-0 py-1 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2744] rounded ${
-              activeView === 'admin'
-                ? 'text-[#0F2744] font-semibold underline underline-offset-4 decoration-[#EA580C]'
-                : 'hover:text-[#0F2744] hover:underline underline-offset-4 decoration-[#EA580C]'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 shrink-0 text-[#EA580C]" aria-hidden="true" />
-            <span>Panel Admin</span>
-          </button>
         </nav>
 
         {/* Zone 3: 1 primary action button (+ mobile menu button) */}
@@ -221,16 +203,6 @@ export function Navbar({
           >
             Hubungi Saya
           </a>
-          <button
-            type="button"
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onOpenAdmin();
-            }}
-            className="text-left px-3 py-2.5 text-sm font-semibold text-[#C2410C] hover:bg-[#F1F5F9] rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-          >
-            Panel Admin
-          </button>
         </nav>
       )}
     </header>
