@@ -40,7 +40,7 @@ export function Navbar({
         {/* Zone 2: Concise single-line navigation links */}
         <nav
           aria-label="Navigasi utama"
-          className="hidden lg:flex items-center gap-6 text-sm font-medium text-[#475569]"
+          className="hidden lg:flex items-center gap-5 text-sm font-medium text-[#475569]"
         >
           <a
             href="#tentang"
@@ -85,6 +85,17 @@ export function Navbar({
             className="hover:text-[#0F2744] hover:underline underline-offset-4 decoration-[#EA580C] transition-colors duration-150 whitespace-nowrap shrink-0 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2744] rounded"
           >
             Daftarkan UMKM
+          </a>
+          <a
+            href="#hubungi-kami"
+            onClick={(e) => {
+              e.preventDefault();
+              setMobileMenuOpen(false);
+              onNavigatePublic('#hubungi-kami');
+            }}
+            className="hover:text-[#0F2744] hover:underline underline-offset-4 decoration-[#EA580C] transition-colors duration-150 whitespace-nowrap shrink-0 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2744] rounded"
+          >
+            Hubungi Saya
           </a>
           <button
             type="button"
@@ -198,6 +209,17 @@ export function Navbar({
             className="px-3 py-2.5 text-sm font-medium text-[#0F2744] hover:bg-[#F1F5F9] rounded-lg transition-colors whitespace-nowrap"
           >
             Daftarkan UMKM
+          </a>
+          <a
+            href="#hubungi-kami"
+            onClick={(e) => {
+              e.preventDefault();
+              setMobileMenuOpen(false);
+              onNavigatePublic('#hubungi-kami');
+            }}
+            className="px-3 py-2.5 text-sm font-medium text-[#0F2744] hover:bg-[#F1F5F9] rounded-lg transition-colors whitespace-nowrap"
+          >
+            Hubungi Saya
           </a>
           <button
             type="button"

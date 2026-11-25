@@ -3,6 +3,7 @@ import { AboutCisagaHubSection } from './components/AboutCisagaHubSection';
 import { AdminLoginView } from './components/AdminLoginView';
 import { AdminPanelView } from './components/AdminPanelView';
 import { CatalogSection } from './components/CatalogSection';
+import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
 import { HeroSection } from './components/HeroSection';
 import { Navbar, type AppView } from './components/Navbar';
@@ -14,6 +15,9 @@ import { VillageExplorerSection } from './components/VillageExplorerSection';
 import { CISAGA_VILLAGES, INITIAL_UMKM_LISTINGS } from './data/cisagaData';
 import type {
   AdminUmkmFormData,
+  ContactMessage,
+  ContactMessageFormData,
+  ContactMessageStatus,
   FreeRegistrationFormData,
   ProductCategory,
   SavedPromoItem,
@@ -55,10 +59,12 @@ export default function App() {
   const [selectedListing, setSelectedListing] = useState<UmkmListing | null>(null);
   const [isSavedDrawerOpen, setIsSavedDrawerOpen] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [feedbackHasSavedAction, setFeedbackHasSavedAction] = useState<boolean>(false);
 
-  // Server-backed UMKM listings
+  // Server-backed UMKM listings & admin inbox messages
   const [publicListings, setPublicListings] = useState<UmkmListing[]>(INITIAL_UMKM_LISTINGS);
   const [adminListings, setAdminListings] = useState<UmkmListing[]>([]);
+  const [adminMessages, setAdminMessages] = useState<ContactMessage[]>([]);
 
   // Developer-only admin session state (held strictly in JS memory, never in storage)
   const [adminToken, setAdminToken] = useState<string | null>(null);
@@ -86,7 +92,10 @@ export default function App() {
 
   useEffect(() => {
     if (!feedbackMessage) return;
-    const timer = window.setTimeout(() => setFeedbackMessage(null), 3200);
+    const timer = window.setTimeout(() => {
+      setFeedbackMessage(null);
+      setFeedbackHasSavedAction(false);
+    }, 3200);
     return () => window.clearTimeout(timer);
   }, [feedbackMessage]);
 
@@ -107,6 +116,36 @@ export default function App() {
     void fetchPublicListings();
   }, [fetchPublicListings]);
 
+  const fetchAdminMessages = useCallback(async (token: string): Promise<void> => {
+    try {
+      const res = await fetch('/api/admin/messages', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) {
+        setAdminToken(null);
+        setAdminListings([]);
+        setAdminMessages([]);
+        setAuthMode('login');
+        return;
+      }
+      if (!res.ok) return;
+      const data = (await res.json()) as { messages?: ContactMessage[] };
+      if (Array.isArray(data.messages)) {
+        setAdminMessages(data.messages);
+      }
+    } catch {
+      // Keep current inbox state if offline or request interrupted
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeView !== 'admin' || !adminToken) return;
+    const intervalId = window.setInterval(() => {
+      void fetchAdminMessages(adminToken);
+    }, 8000);
+    return () => window.clearInterval(intervalId);
+  }, [activeView, adminToken, fetchAdminMessages]);
+
   const fetchAdminListings = useCallback(async (token: string): Promise<boolean> => {
     const res = await fetch('/api/admin/listings', {
       headers: { Authorization: `Bearer ${token}` },
@@ -114,6 +153,7 @@ export default function App() {
     if (res.status === 401) {
       setAdminToken(null);
       setAdminListings([]);
+      setAdminMessages([]);
       setAuthMode('login');
       setAuthError('Sesi admin developer berakhir. Silakan login kembali.');
       return false;
@@ -148,17 +188,21 @@ export default function App() {
         setAuthMode(data.mode);
 
         if (data.authenticated && currentToken) {
-          await fetchAdminListings(currentToken);
+          const ok = await fetchAdminListings(currentToken);
+          if (ok) {
+            await fetchAdminMessages(currentToken);
+          }
         } else {
           setAdminToken(null);
           setAdminListings([]);
+          setAdminMessages([]);
         }
       } catch {
         setAuthMode('login');
         setAuthError('Tidak dapat terhubung ke server autentikasi.');
       }
     },
-    [fetchAdminListings]
+    [fetchAdminListings, fetchAdminMessages]
   );
 
   const premiumListings = useMemo(() => getPremiumTopListings(publicListings), [publicListings]);
@@ -234,6 +278,7 @@ export default function App() {
       setExpectedAdminUsername(data.username);
       setAuthMode('login');
       await fetchAdminListings(data.token);
+      await fetchAdminMessages(data.token);
       setFeedbackMessage('Sandi developer aktif. Selamat datang di Panel Admin.');
     } catch {
       setAuthError('Gagal menghubungi server autentikasi.');
@@ -259,6 +304,7 @@ export default function App() {
       setAdminToken(data.token);
       setExpectedAdminUsername(data.username);
       await fetchAdminListings(data.token);
+      await fetchAdminMessages(data.token);
       setFeedbackMessage('Login developer berhasil.');
     } catch {
       setAuthError('Gagal menghubungi server autentikasi.');
@@ -271,6 +317,7 @@ export default function App() {
     const currentToken = adminToken;
     setAdminToken(null);
     setAdminListings([]);
+    setAdminMessages([]);
     setAuthError(null);
     setAuthMode('login');
     if (currentToken) {
@@ -301,6 +348,7 @@ export default function App() {
     if (res.status === 401) {
       setAdminToken(null);
       setAdminListings([]);
+      setAdminMessages([]);
       setAuthMode('login');
       setAuthError('Sesi admin developer berakhir. Silakan login kembali.');
       throw new Error('Sesi admin berakhir.');
@@ -311,6 +359,7 @@ export default function App() {
   const handleSaveFromModal = (listing: UmkmListing, variantId: string) => {
     const alreadySaved = isListingSaved(savedItems, listing.id, variantId);
     setSavedItems((prev) => saveListingToPromo(prev, listing, variantId));
+    setFeedbackHasSavedAction(true);
     setFeedbackMessage(
       alreadySaved
         ? `${listing.productName} sudah ada di daftar minat.`
@@ -321,6 +370,7 @@ export default function App() {
   const handleToggleQuickSave = (listing: UmkmListing) => {
     const wasSaved = isListingSaved(savedItems, listing.id);
     setSavedItems((prev) => toggleQuickSaveListing(prev, listing));
+    setFeedbackHasSavedAction(true);
     setFeedbackMessage(
       wasSaved
         ? `${listing.productName} dihapus dari daftar minat.`
@@ -462,6 +512,61 @@ export default function App() {
     return body.url;
   };
 
+  const handleSubmitContactMessage = async (
+    data: ContactMessageFormData
+  ): Promise<ContactMessage> => {
+    const res = await fetch('/api/contact-messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      throw new Error(await readErrorMessage(res, 'Gagal mengirim pesan ke admin.'));
+    }
+    const body = (await res.json()) as { message: ContactMessage };
+    setFeedbackHasSavedAction(false);
+    setFeedbackMessage('Pesan berhasil dikirim ke Portal Admin.');
+    return body.message;
+  };
+
+  const handleUpdateMessageStatus = async (
+    id: string,
+    status: ContactMessageStatus
+  ): Promise<void> => {
+    const res = await requireAdminFetch(`/api/admin/messages/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      setFeedbackMessage(await readErrorMessage(res, 'Gagal memperbarui status pesan.'));
+      return;
+    }
+    const body = (await res.json()) as { message: ContactMessage };
+    setAdminMessages((prev) => prev.map((m) => (m.id === id ? body.message : m)));
+    setFeedbackMessage(`Status pesan dari ${body.message.senderName} diubah menjadi ${status}.`);
+  };
+
+  const handleDeleteMessage = async (id: string): Promise<void> => {
+    const target = adminMessages.find((m) => m.id === id);
+    const res = await requireAdminFetch(`/api/admin/messages/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      setFeedbackMessage(await readErrorMessage(res, 'Gagal menghapus pesan.'));
+      return;
+    }
+    setAdminMessages((prev) => prev.filter((m) => m.id !== id));
+    if (target) {
+      setFeedbackMessage(`Pesan dari ${target.senderName} telah dihapus.`);
+    }
+  };
+
+  const handleRefreshMessages = async (): Promise<void> => {
+    if (!adminToken) return;
+    await fetchAdminMessages(adminToken);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F2744]">
       <Navbar
@@ -481,6 +586,7 @@ export default function App() {
             <AdminPanelView
               adminUsername={expectedAdminUsername}
               listings={adminListings}
+              messages={adminMessages}
               villages={CISAGA_VILLAGES}
               onCreateListing={handleAdminCreate}
               onUpdateListing={handleAdminUpdate}
@@ -488,6 +594,9 @@ export default function App() {
               onToggleTier={handleAdminToggleTier}
               onCycleStatus={handleAdminCycleStatus}
               onDeleteListing={handleAdminDelete}
+              onUpdateMessageStatus={handleUpdateMessageStatus}
+              onDeleteMessage={handleDeleteMessage}
+              onRefreshMessages={handleRefreshMessages}
               onLogout={handleAdminLogout}
             />
           ) : (
@@ -552,6 +661,8 @@ export default function App() {
               onRegisterFreeUmkm={handleRegisterFreeUmkm}
               onOpenAdmin={handleOpenAdmin}
             />
+
+            <ContactSection onSubmitContactMessage={handleSubmitContactMessage} />
           </>
         )}
       </main>
@@ -577,14 +688,15 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 right-5 z-40 bg-[#0F2744] text-white text-sm px-4 py-3 rounded-lg shadow-lg border border-white/10 flex items-center gap-3"
+          className="fixed bottom-4 left-4 right-4 sm:bottom-5 sm:left-auto sm:right-5 sm:max-w-md z-40 bg-[#0F2744] text-white text-sm px-4 py-3 rounded-lg shadow-lg border border-white/10 flex items-center justify-between gap-3"
         >
           <span>{feedbackMessage}</span>
-          {activeView === 'public' && (
+          {activeView === 'public' && feedbackHasSavedAction && (
             <button
               type="button"
               onClick={() => {
                 setFeedbackMessage(null);
+                setFeedbackHasSavedAction(false);
                 setIsSavedDrawerOpen(true);
               }}
               className="text-xs font-semibold text-[#FDBA74] hover:underline whitespace-nowrap cursor-pointer"

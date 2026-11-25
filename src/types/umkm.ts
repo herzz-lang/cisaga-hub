@@ -112,3 +112,32 @@ export interface InquiryReceipt {
   inquiryPurpose: string;
   items: SavedPromoItem[];
 }
+
+export type ContactMessageStatus = 'Baru' | 'Dibaca' | 'Selesai';
+
+export type ContactTopic =
+  | 'Pertanyaan Umum'
+  | 'Promosi UMKM Premium'
+  | 'Kemitraan & Reseller'
+  | 'Bantuan Pendaftaran'
+  | 'Saran & Masukan';
+
+export interface ContactMessageFormData {
+  senderName: string;
+  whatsapp: string;
+  email: string;
+  subject: ContactTopic;
+  message: string;
+}
+
+export interface ContactMessage {
+  id: string;
+  senderName: string;
+  whatsapp: string;
+  email?: string;
+  subject: ContactTopic;
+  message: string;
+  status: ContactMessageStatus;
+  createdAt: string;
+}
+

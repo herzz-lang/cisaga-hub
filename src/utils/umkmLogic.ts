@@ -2,6 +2,8 @@ import { UMKM_IMAGE_PRESETS } from '../data/cisagaData';
 import type {
   AdminUmkmFormData,
   BusinessCategory,
+  ContactMessageFormData,
+  ContactTopic,
   FreeRegistrationFormData,
   ProductCategory,
   PromoInquiryFormData,
@@ -460,3 +462,58 @@ export function generateInquiryCode(
 ): string {
   return `PRM-${seedNumber}`;
 }
+
+export const CONTACT_TOPICS: ContactTopic[] = [
+  'Pertanyaan Umum',
+  'Promosi UMKM Premium',
+  'Kemitraan & Reseller',
+  'Bantuan Pendaftaran',
+  'Saran & Masukan',
+];
+
+export function isValidEmailAddress(email: string): boolean {
+  const trimmed = email.trim();
+  if (!trimmed) return true;
+  if (trimmed.length > 120) return false;
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(trimmed);
+}
+
+export function validateContactMessageForm(
+  form: ContactMessageFormData
+): Partial<Record<keyof ContactMessageFormData, string>> {
+  const errors: Partial<Record<keyof ContactMessageFormData, string>> = {};
+  const name = form.senderName.trim();
+  const message = form.message.trim();
+  const email = form.email.trim();
+
+  if (name.length < 2 || name.length > 80) {
+    errors.senderName = 'Masukkan nama lengkap Anda (2–80 karakter).';
+  }
+  if (!isValidIndonesianPhone(form.whatsapp)) {
+    errors.whatsapp = 'Masukkan nomor WhatsApp aktif yang valid (contoh: 081234567890).';
+  }
+  if (email.length > 0 && !isValidEmailAddress(email)) {
+    errors.email = 'Format alamat email tidak valid.';
+  }
+  if (!CONTACT_TOPICS.includes(form.subject)) {
+    errors.subject = 'Pilih topik pesan yang tersedia.';
+  }
+  if (message.length < 10 || message.length > 1500) {
+    errors.message = 'Isi pesan minimal 10 karakter (maksimal 1.500 karakter).';
+  }
+
+  return errors;
+}
+
+export function formatContactDate(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) return isoTimestamp;
+  return parsed.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+

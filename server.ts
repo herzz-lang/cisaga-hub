@@ -52,6 +52,23 @@ function clearAuthAttempts(ipKey: string): void {
   authAttempts.delete(ipKey);
 }
 
+const contactSubmissions = new Map<string, RateLimitEntry>();
+const MAX_CONTACT_SUBMISSIONS = 15;
+
+function checkAndRecordContactRateLimit(ipKey: string): boolean {
+  const now = Date.now();
+  const entry = contactSubmissions.get(ipKey);
+  if (!entry || now >= entry.resetAt) {
+    contactSubmissions.set(ipKey, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= MAX_CONTACT_SUBMISSIONS) {
+    return false;
+  }
+  entry.count += 1;
+  return true;
+}
+
 function getEnvCredentials() {
   return {
     username: process.env.ADMIN_USERNAME,
@@ -125,6 +142,23 @@ async function startServer() {
     try {
       const created = store.createFreeRegistration(req.body ?? {});
       res.status(201).json({ listing: created });
+    } catch (err) {
+      handleApiError(err, res);
+    }
+  });
+
+  // Public "Hubungi Kami" message submission -> persisted for Developer Admin Portal inbox
+  app.post('/api/contact-messages', (req, res) => {
+    const ipKey = req.ip || 'local';
+    if (!checkAndRecordContactRateLimit(ipKey)) {
+      res.status(429).json({
+        error: 'Terlalu banyak pesan dikirim dalam waktu singkat. Coba lagi beberapa menit lagi.',
+      });
+      return;
+    }
+    try {
+      const created = store.createContactMessage(req.body ?? {});
+      res.status(201).json({ message: created });
     } catch (err) {
       handleApiError(err, res);
     }
@@ -298,6 +332,44 @@ async function startServer() {
     }
     try {
       store.deleteListing(id);
+      res.json({ ok: true });
+    } catch (err) {
+      handleApiError(err, res);
+    }
+  });
+
+  // Protected Developer Admin Contact Inbox routes
+  app.get('/api/admin/messages', requireDeveloperAuth, (_req, res) => {
+    try {
+      const messages = store.listContactMessages();
+      res.json({ messages });
+    } catch (err) {
+      handleApiError(err, res);
+    }
+  });
+
+  app.patch('/api/admin/messages/:id/status', requireDeveloperAuth, (req, res) => {
+    const id = req.params.id;
+    if (!isValidListingId(id)) {
+      res.status(400).json({ error: 'ID pesan tidak valid.' });
+      return;
+    }
+    try {
+      const updated = store.updateContactMessageStatus(id, req.body?.status);
+      res.json({ message: updated });
+    } catch (err) {
+      handleApiError(err, res);
+    }
+  });
+
+  app.delete('/api/admin/messages/:id', requireDeveloperAuth, (req, res) => {
+    const id = req.params.id;
+    if (!isValidListingId(id)) {
+      res.status(400).json({ error: 'ID pesan tidak valid.' });
+      return;
+    }
+    try {
+      store.deleteContactMessage(id);
       res.json({ ok: true });
     } catch (err) {
       handleApiError(err, res);

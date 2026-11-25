@@ -14,6 +14,7 @@ import {
   toggleListingTier,
   updateAdminListingEntry,
   validateAdminUmkmForm,
+  validateContactMessageForm,
   validateFreeRegistrationForm,
 } from './umkmLogic';
 
@@ -203,3 +204,27 @@ test('formatRupiah and buildWhatsAppUrl format cleanly', () => {
     'https://wa.me/6281234567890?text=Tes'
   );
 });
+
+test('validateContactMessageForm validates sender, whatsapp, optional email, and message length', () => {
+  const invalid = validateContactMessageForm({
+    senderName: 'A',
+    whatsapp: '123',
+    email: 'bukan-email',
+    subject: 'Pertanyaan Umum',
+    message: 'Singkat',
+  });
+  assert.ok(invalid.senderName);
+  assert.ok(invalid.whatsapp);
+  assert.ok(invalid.email);
+  assert.ok(invalid.message);
+
+  const validNoEmail = validateContactMessageForm({
+    senderName: 'Dede Kurniawan',
+    whatsapp: '081234567890',
+    email: '',
+    subject: 'Promosi UMKM Premium',
+    message: 'Saya ingin menanyakan syarat promosi UMKM Premium di halaman utama CISAGA HUB.',
+  });
+  assert.deepEqual(validNoEmail, {});
+});
+

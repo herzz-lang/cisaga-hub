@@ -264,3 +264,69 @@ test('server store persists uploaded photo paths, gallery images, and menu/servi
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('server store creates, lists, updates status, and deletes contact messages with strict validation', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cisaga-contact-test-'));
+  try {
+    const store = createServerStore(tempDir);
+    assert.equal(store.listContactMessages().length, 0);
+
+    // Rejects invalid email or short message or unknown subject
+    assert.throws(
+      () =>
+        store.createContactMessage({
+          senderName: 'Rina',
+          whatsapp: '081234567890',
+          email: 'invalid-email',
+          subject: 'Pertanyaan Umum',
+          message: 'Pesan valid lebih dari sepuluh karakter.',
+        }),
+      /Format alamat email tidak valid/
+    );
+
+    assert.throws(
+      () =>
+        store.createContactMessage({
+          senderName: 'Rina',
+          whatsapp: '081234567890',
+          email: '',
+          subject: 'Topik Asing' as never,
+          message: 'Pesan valid lebih dari sepuluh karakter.',
+        }),
+      /Topik pesan tidak valid/
+    );
+
+    const created = store.createContactMessage({
+      senderName: 'Hendra Wijaya',
+      whatsapp: '0812-3456-7890',
+      email: 'hendra@contoh.id',
+      subject: 'Kemitraan & Reseller',
+      message: 'Halo admin CISAGA HUB, saya tertarik menjadi reseller produk gula semut Cisaga.',
+    });
+    assert.equal(created.status, 'Baru');
+    assert.equal(created.whatsapp, '081234567890');
+    assert.equal(store.listContactMessages().length, 1);
+
+    // Re-opening store preserves persisted messages on disk
+    const reloaded = createServerStore(tempDir);
+    assert.equal(reloaded.listContactMessages().length, 1);
+    assert.equal(reloaded.listContactMessages()[0].senderName, 'Hendra Wijaya');
+
+    const markedRead = reloaded.updateContactMessageStatus(created.id, 'Dibaca');
+    assert.equal(markedRead.status, 'Dibaca');
+
+    const markedDone = reloaded.updateContactMessageStatus(created.id, 'Selesai');
+    assert.equal(markedDone.status, 'Selesai');
+
+    assert.throws(
+      () => reloaded.updateContactMessageStatus(created.id, 'StatusNgawur'),
+      /Status pesan tidak valid/
+    );
+
+    reloaded.deleteContactMessage(created.id);
+    assert.equal(reloaded.listContactMessages().length, 0);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+

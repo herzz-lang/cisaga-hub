@@ -8,6 +8,10 @@ import {
 import type {
   AdminUmkmFormData,
   BusinessCategory,
+  ContactMessage,
+  ContactMessageFormData,
+  ContactMessageStatus,
+  ContactTopic,
   FreeRegistrationFormData,
   ProductVariant,
   UmkmListing,
@@ -41,8 +45,22 @@ export class StoreHttpError extends Error {
 const VALID_CATEGORIES: BusinessCategory[] = ['Kuliner', 'Kerajinan', 'Agribisnis', 'Busana'];
 const VALID_TIERS: UmkmTier[] = ['premium', 'reguler'];
 const VALID_STATUSES: UmkmStatus[] = ['Aktif', 'Menunggu Verifikasi', 'Nonaktif'];
+const VALID_CONTACT_TOPICS: ContactTopic[] = [
+  'Pertanyaan Umum',
+  'Promosi UMKM Premium',
+  'Kemitraan & Reseller',
+  'Bantuan Pendaftaran',
+  'Saran & Masukan',
+];
+const VALID_CONTACT_STATUSES: ContactMessageStatus[] = ['Baru', 'Dibaca', 'Selesai'];
 const VALID_VILLAGES = new Set(CISAGA_VILLAGES.map((v) => v.name));
 const ALLOWED_IMAGE_URLS = new Set(UMKM_IMAGE_PRESETS.map((p) => p.url));
+
+function isValidOptionalEmail(email: string): boolean {
+  if (!email) return true;
+  if (email.length > 120) return false;
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email);
+}
 
 function isValidIndonesianPhone(phone: string): boolean {
   const digits = phone.replace(/[^0-9]/g, '');
@@ -107,6 +125,7 @@ function resolveSafeGalleryImages(rawGallery: unknown, primaryImage: string): st
 export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')) {
   const listingsPath = path.join(dataDir, 'umkm-listings.json');
   const authPath = path.join(dataDir, 'admin-auth.json');
+  const messagesPath = path.join(dataDir, 'contact-messages.json');
 
   const ensureDataDir = () => {
     if (!fs.existsSync(dataDir)) {
@@ -155,6 +174,25 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
 
   const writeListings = (listings: UmkmListing[]) => {
     writeJsonAtomic(listingsPath, listings);
+  };
+
+  const readMessages = (): ContactMessage[] => {
+    try {
+      if (fs.existsSync(messagesPath)) {
+        const raw = fs.readFileSync(messagesPath, 'utf8');
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed as ContactMessage[];
+        }
+      }
+    } catch {
+      // Return empty inbox if file is missing or unreadable
+    }
+    return [];
+  };
+
+  const writeMessages = (messages: ContactMessage[]) => {
+    writeJsonAtomic(messagesPath, messages);
   };
 
   const readClaimedAuth = (): ClaimedAdminRecord | null => {
@@ -572,6 +610,76 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
     writeListings(current.filter((item) => item.id !== id));
   };
 
+  const listContactMessages = (): ContactMessage[] => readMessages();
+
+  const createContactMessage = (raw: Partial<ContactMessageFormData>): ContactMessage => {
+    const senderName = typeof raw.senderName === 'string' ? raw.senderName.trim() : '';
+    const whatsapp = typeof raw.whatsapp === 'string' ? raw.whatsapp.trim() : '';
+    const email = typeof raw.email === 'string' ? raw.email.trim() : '';
+    const subject = VALID_CONTACT_TOPICS.includes(raw.subject as ContactTopic)
+      ? (raw.subject as ContactTopic)
+      : null;
+    const message = typeof raw.message === 'string' ? raw.message.trim() : '';
+
+    if (senderName.length < 2 || senderName.length > 80) {
+      throw new StoreHttpError(400, 'Nama pengirim harus 2–80 karakter.');
+    }
+    if (!isValidIndonesianPhone(whatsapp)) {
+      throw new StoreHttpError(400, 'Masukkan nomor WhatsApp aktif yang valid.');
+    }
+    if (email.length > 0 && !isValidOptionalEmail(email)) {
+      throw new StoreHttpError(400, 'Format alamat email tidak valid.');
+    }
+    if (!subject) {
+      throw new StoreHttpError(400, 'Topik pesan tidak valid.');
+    }
+    if (message.length < 10 || message.length > 1500) {
+      throw new StoreHttpError(400, 'Isi pesan harus 10–1.500 karakter.');
+    }
+
+    const randomSuffix = Math.random().toString(36).slice(2, 6);
+    const created: ContactMessage = {
+      id: `msg-${Date.now()}-${randomSuffix}`,
+      senderName,
+      whatsapp: whatsapp.replace(/[^0-9]/g, ''),
+      ...(email ? { email } : {}),
+      subject,
+      message,
+      status: 'Baru',
+      createdAt: new Date().toISOString(),
+    };
+
+    const current = readMessages();
+    writeMessages([created, ...current].slice(0, 500));
+    return created;
+  };
+
+  const updateContactMessageStatus = (
+    id: string,
+    rawStatus: unknown
+  ): ContactMessage => {
+    if (!VALID_CONTACT_STATUSES.includes(rawStatus as ContactMessageStatus)) {
+      throw new StoreHttpError(400, 'Status pesan tidak valid.');
+    }
+    const status = rawStatus as ContactMessageStatus;
+    const current = readMessages();
+    const existing = current.find((item) => item.id === id);
+    if (!existing) {
+      throw new StoreHttpError(404, 'Pesan tidak ditemukan.');
+    }
+    const updated: ContactMessage = { ...existing, status };
+    writeMessages(current.map((item) => (item.id === id ? updated : item)));
+    return updated;
+  };
+
+  const deleteContactMessage = (id: string): void => {
+    const current = readMessages();
+    if (!current.some((item) => item.id === id)) {
+      throw new StoreHttpError(404, 'Pesan tidak ditemukan.');
+    }
+    writeMessages(current.filter((item) => item.id !== id));
+  };
+
   return {
     getAuthConfig,
     claimInitialPassword,
@@ -584,5 +692,9 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
     toggleTier,
     cycleStatus,
     deleteListing,
+    listContactMessages,
+    createContactMessage,
+    updateContactMessageStatus,
+    deleteContactMessage,
   };
 }

@@ -87,6 +87,18 @@ export function Footer({ onNavigatePublic, onOpenAdmin }: FooterProps) {
                 </a>
               </li>
               <li>
+                <a
+                  href="#hubungi-kami"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNavigatePublic('#hubungi-kami');
+                  }}
+                  className="hover:text-[#0F2744] transition-colors"
+                >
+                  Hubungi Saya
+                </a>
+              </li>
+              <li>
                 <button
                   type="button"
                   onClick={onOpenAdmin}

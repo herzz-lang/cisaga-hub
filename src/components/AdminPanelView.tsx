@@ -2,10 +2,15 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  CheckCheck,
   Edit3,
   ImagePlus,
+  Inbox,
   LogOut,
+  Mail,
+  MessageCircle,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -17,17 +22,27 @@ import type {
   AdminUmkmFormData,
   AdminVariantFormItem,
   BusinessCategory,
+  ContactMessage,
+  ContactMessageStatus,
   UmkmListing,
   UmkmStatus,
   UmkmTier,
   VillageInfo,
 } from '../types/umkm';
-import { formatRupiah, getListingAllImages, validateAdminUmkmForm } from '../utils/umkmLogic';
+import {
+  buildWhatsAppUrl,
+  formatContactDate,
+  formatRupiah,
+  getListingAllImages,
+  isValidEmailAddress,
+  validateAdminUmkmForm,
+} from '../utils/umkmLogic';
 import { ProductImage } from './ProductImage';
 
 interface AdminPanelViewProps {
   adminUsername: string;
   listings: UmkmListing[];
+  messages: ContactMessage[];
   villages: VillageInfo[];
   onCreateListing: (data: AdminUmkmFormData) => Promise<void>;
   onUpdateListing: (id: string, data: AdminUmkmFormData) => Promise<void>;
@@ -35,10 +50,14 @@ interface AdminPanelViewProps {
   onToggleTier: (id: string) => Promise<void>;
   onCycleStatus: (id: string) => Promise<void>;
   onDeleteListing: (id: string) => Promise<void>;
+  onUpdateMessageStatus: (id: string, status: ContactMessageStatus) => Promise<void>;
+  onDeleteMessage: (id: string) => Promise<void>;
+  onRefreshMessages: () => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
 type AdminFilterTab = 'all' | 'premium' | 'reguler' | 'pending';
+type AdminWorkspaceTab = 'umkm' | 'messages';
 
 const BUSINESS_CATEGORIES: BusinessCategory[] = [
   'Kuliner',
@@ -73,6 +92,7 @@ const createEmptyForm = (): AdminUmkmFormData => ({
 export function AdminPanelView({
   adminUsername,
   listings,
+  messages,
   villages,
   onCreateListing,
   onUpdateListing,
@@ -80,8 +100,15 @@ export function AdminPanelView({
   onToggleTier,
   onCycleStatus,
   onDeleteListing,
+  onUpdateMessageStatus,
+  onDeleteMessage,
+  onRefreshMessages,
   onLogout,
 }: AdminPanelViewProps) {
+  const [workspaceTab, setWorkspaceTab] = useState<AdminWorkspaceTab>('umkm');
+  const [messageFilter, setMessageFilter] = useState<'all' | ContactMessageStatus>('all');
+  const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<string | null>(null);
+  const [isRefreshingMessages, setIsRefreshingMessages] = useState<boolean>(false);
   const [filterTab, setFilterTab] = useState<AdminFilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -103,6 +130,19 @@ export function AdminPanelView({
     const pendingCount = listings.filter((i) => i.status === 'Menunggu Verifikasi').length;
     return { total, premiumActive, regulerCount, pendingCount };
   }, [listings]);
+
+  const messageStats = useMemo(() => {
+    const total = messages.length;
+    const baru = messages.filter((m) => m.status === 'Baru').length;
+    const dibaca = messages.filter((m) => m.status === 'Dibaca').length;
+    const selesai = messages.filter((m) => m.status === 'Selesai').length;
+    return { total, baru, dibaca, selesai };
+  }, [messages]);
+
+  const filteredMessages = useMemo(() => {
+    if (messageFilter === 'all') return messages;
+    return messages.filter((m) => m.status === messageFilter);
+  }, [messages, messageFilter]);
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -345,10 +385,13 @@ export function AdminPanelView({
           </h1>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={openCreateForm}
+            onClick={() => {
+              setWorkspaceTab('umkm');
+              openCreateForm();
+            }}
             className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
@@ -366,8 +409,287 @@ export function AdminPanelView({
         </div>
       </div>
 
-      {/* 4 Tabular KPI Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {/* Workspace Switcher: Data UMKM vs Kotak Masuk Pesan */}
+      <div
+        role="tablist"
+        aria-label="Bagian portal admin"
+        className="inline-flex flex-wrap items-center gap-1.5 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'umkm'}
+          onClick={() => setWorkspaceTab('umkm')}
+          className={`px-4 py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+            workspaceTab === 'umkm'
+              ? 'bg-[#0F2744] text-white shadow-xs'
+              : 'text-[#475569] hover:text-[#0F2744]'
+          }`}
+        >
+          Kelola Data UMKM ({listings.length})
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          data-testid="admin-tab-messages"
+          aria-selected={workspaceTab === 'messages'}
+          onClick={() => {
+            setWorkspaceTab('messages');
+            setIsRefreshingMessages(true);
+            void onRefreshMessages().finally(() => setIsRefreshingMessages(false));
+          }}
+          className={`inline-flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+            workspaceTab === 'messages'
+              ? 'bg-[#0F2744] text-white shadow-xs'
+              : 'text-[#475569] hover:text-[#0F2744]'
+          }`}
+        >
+          <Inbox className="w-4 h-4" aria-hidden="true" />
+          <span>Kotak Masuk Pesan ({messages.length})</span>
+          {messageStats.baru > 0 && (
+            <span
+              className={`font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded ${
+                workspaceTab === 'messages'
+                  ? 'bg-[#EA580C] text-white'
+                  : 'bg-[#EA580C]/15 text-[#C2410C]'
+              }`}
+            >
+              {messageStats.baru} Baru
+            </span>
+          )}
+        </button>
+      </div>
+
+      {workspaceTab === 'messages' ? (
+        <div data-testid="admin-messages-view" className="space-y-6">
+          {/* Inbox KPI Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
+              <p className="text-xs text-[#475569] mb-1">Total Pesan Masuk</p>
+              <p className="font-mono tabular-nums text-2xl font-semibold text-[#0F2744]">
+                {messageStats.total}
+              </p>
+            </div>
+            <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
+              <p className="text-xs text-[#475569] mb-1">Pesan Baru</p>
+              <p className="font-mono tabular-nums text-2xl font-semibold text-[#EA580C]">
+                {messageStats.baru}
+              </p>
+            </div>
+            <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
+              <p className="text-xs text-[#475569] mb-1">Sudah Dibaca</p>
+              <p className="font-mono tabular-nums text-2xl font-semibold text-[#0F2744]">
+                {messageStats.dibaca}
+              </p>
+            </div>
+            <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
+              <p className="text-xs text-[#475569] mb-1">Sudah Ditindaklanjuti</p>
+              <p className="font-mono tabular-nums text-2xl font-semibold text-[#047857]">
+                {messageStats.selesai}
+              </p>
+            </div>
+          </div>
+
+          {/* Inbox Filter + Refresh */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div
+              role="tablist"
+              aria-label="Filter status pesan masuk"
+              className="flex flex-wrap items-center gap-1.5 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg w-fit"
+            >
+              {(
+                [
+                  { id: 'all', label: 'Semua' },
+                  { id: 'Baru', label: 'Baru' },
+                  { id: 'Dibaca', label: 'Dibaca' },
+                  { id: 'Selesai', label: 'Selesai' },
+                ] as const
+              ).map((tab) => {
+                const active = messageFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setMessageFilter(tab.id)}
+                    className={`px-3.5 py-2 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      active
+                        ? 'bg-[#0F2744] text-white shadow-xs'
+                        : 'text-[#475569] hover:text-[#0F2744]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={isRefreshingMessages}
+              onClick={() => {
+                setIsRefreshingMessages(true);
+                void onRefreshMessages().finally(() => setIsRefreshingMessages(false));
+              }}
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium text-[#0F2744] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${isRefreshingMessages ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>Muat Ulang Pesan</span>
+            </button>
+          </div>
+
+          {/* Messages List */}
+          {filteredMessages.length === 0 ? (
+            <div className="bg-white border border-[#E2E8F0] rounded-xl p-10 text-center">
+              <p className="font-display text-lg font-bold text-[#0F2744] mb-1">
+                Belum ada pesan pada filter ini
+              </p>
+              <p className="text-sm text-[#475569]">
+                Pesan yang dikirim pengunjung melalui formulir Hubungi Saya akan langsung muncul di
+                sini secara otomatis.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredMessages.map((msg) => {
+                const replyWaUrl = buildWhatsAppUrl(
+                  msg.whatsapp,
+                  `Halo ${msg.senderName}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${msg.subject}".`
+                );
+                const hasValidEmail = Boolean(msg.email && isValidEmailAddress(msg.email));
+
+                return (
+                  <article
+                    key={msg.id}
+                    data-testid={`admin-message-row-${msg.id}`}
+                    className="bg-white border border-[#E2E8F0] rounded-xl p-5 sm:p-6 space-y-4"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-[#475569] mb-1">
+                          <span
+                            className={`font-semibold ${
+                              msg.status === 'Baru'
+                                ? 'text-[#C2410C]'
+                                : msg.status === 'Selesai'
+                                  ? 'text-[#047857]'
+                                  : 'text-[#0F2744]'
+                            }`}
+                          >
+                            {msg.status}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-semibold text-[#0F2744]">{msg.subject}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono tabular-nums">
+                            {formatContactDate(msg.createdAt)}
+                          </span>
+                        </div>
+                        <h3 className="text-base font-bold text-[#0F2744]">{msg.senderName}</h3>
+                        <p className="text-xs text-[#475569] mt-0.5 font-mono tabular-nums">
+                          WA: {msg.whatsapp}
+                          {hasValidEmail && msg.email ? ` · Email: ${msg.email}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <a
+                          href={replyWaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-md transition-colors whitespace-nowrap"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Balas WA</span>
+                        </a>
+
+                        {hasValidEmail && msg.email && (
+                          <a
+                            href={`mailto:${encodeURIComponent(msg.email)}?subject=${encodeURIComponent(`Balasan CISAGA HUB: ${msg.subject}`)}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-md transition-colors whitespace-nowrap"
+                          >
+                            <Mail className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Balas Email</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-[#0F2744] leading-relaxed whitespace-pre-line">
+                      {msg.message}
+                    </p>
+
+                    <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {msg.status !== 'Dibaca' && (
+                          <button
+                            type="button"
+                            onClick={() => void onUpdateMessageStatus(msg.id, 'Dibaca')}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0F2744] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] rounded-md cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Tandai Dibaca</span>
+                          </button>
+                        )}
+                        {msg.status !== 'Selesai' && (
+                          <button
+                            type="button"
+                            onClick={() => void onUpdateMessageStatus(msg.id, 'Selesai')}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#047857] bg-[#047857]/10 hover:bg-[#047857]/15 border border-[#047857]/30 rounded-md cursor-pointer"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Tandai Selesai</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {confirmDeleteMessageId === msg.id ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void onDeleteMessage(msg.id);
+                              setConfirmDeleteMessageId(null);
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded cursor-pointer"
+                          >
+                            Ya, Hapus
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteMessageId(null)}
+                            className="px-2 py-1 text-xs font-medium text-[#475569] border border-[#E2E8F0] rounded cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteMessageId(msg.id)}
+                          aria-label={`Hapus pesan dari ${msg.senderName}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#475569] hover:text-[#B91C1C] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] rounded-md cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Hapus</span>
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* 4 Tabular KPI Metrics */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
           <p className="text-xs text-[#475569] mb-1">Total Data UMKM</p>
           <p
@@ -1250,6 +1572,8 @@ export function AdminPanelView({
           </div>
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }

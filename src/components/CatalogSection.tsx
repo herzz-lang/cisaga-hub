@@ -182,7 +182,7 @@ export function CatalogSection({
         ) : (
           <div
             data-testid="product-grid"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-7"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3.5"
           >
             {listings.map((listing) => {
               const startingPrice = getStartingPrice(listing);
@@ -193,7 +193,7 @@ export function CatalogSection({
                 <article
                   key={listing.id}
                   data-testid={`product-card-${listing.id}`}
-                  className="group bg-white border border-[#E2E8F0] rounded-xl overflow-hidden flex flex-col transition-transform duration-150 hover:-translate-y-0.5 hover:border-[#CBD5E1]"
+                  className="group bg-white border border-[#E2E8F0] rounded-lg overflow-hidden flex flex-col transition-transform duration-150 hover:-translate-y-0.5 hover:border-[#CBD5E1]"
                 >
                   <div className="aspect-[4/3] bg-[#F1F5F9] overflow-hidden border-b border-[#E2E8F0]">
                     <ProductImage
@@ -204,52 +204,58 @@ export function CatalogSection({
                     />
                   </div>
 
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-2">
+                  <div className="p-3 sm:p-3.5 flex-1 flex flex-col">
+                    <div className="flex items-center gap-1 text-[11px] leading-tight text-[#475569] mb-1.5 min-w-0">
                       <span
-                        className={
+                        className={`shrink-0 ${
                           isPremium
                             ? 'font-semibold text-[#C2410C]'
                             : 'font-medium text-[#475569]'
-                        }
+                        }`}
                       >
-                        {isPremium ? 'Premium' : 'Reguler · Free'}
+                        {isPremium ? 'Premium' : 'Reguler'}
                       </span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-[#0F2744]">{listing.category}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{listing.village}</span>
+                      <span aria-hidden="true" className="shrink-0">
+                        ·
+                      </span>
+                      <span className="font-semibold text-[#0F2744] shrink-0">
+                        {listing.category}
+                      </span>
+                      <span aria-hidden="true" className="shrink-0">
+                        ·
+                      </span>
+                      <span className="truncate">{listing.village}</span>
                     </div>
 
-                    <h3 className="text-base font-semibold text-[#0F2744] leading-snug mb-1.5">
+                    <h3 className="text-[13px] sm:text-sm font-semibold text-[#0F2744] leading-snug line-clamp-2 mb-1">
                       {listing.productName}
                     </h3>
-                    <p className="text-xs text-[#475569] mb-3">
+                    <p className="text-[11px] text-[#475569] truncate mb-2">
                       {listing.businessName}
                       {listing.variants.length > 1
-                        ? ` · ${listing.variants.length} Menu/Layanan`
+                        ? ` · ${listing.variants.length} Menu`
                         : ''}
                     </p>
-                    <p className="text-sm text-[#475569] leading-relaxed mb-5 flex-1">
+                    <p className="text-xs text-[#475569] leading-relaxed line-clamp-2 mb-3 flex-1">
                       {listing.shortDescription}
                     </p>
 
-                    <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] text-[#475569]">Kisaran mulai</p>
-                        <p className="font-mono tabular-nums text-[15px] font-semibold text-[#0F2744]">
+                    <div className="pt-2.5 border-t border-[#E2E8F0] space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-[11px] text-[#475569]">Mulai</span>
+                        <span className="font-mono tabular-nums text-sm font-semibold text-[#0F2744]">
                           {formatRupiah(startingPrice)}
-                        </p>
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => onSelectListing(listing)}
                           aria-label={`Lihat profil dan detail ${listing.productName}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-2 text-xs font-medium text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-md transition-colors whitespace-nowrap cursor-pointer min-h-[36px]"
                         >
-                          <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                          <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           <span>Detail</span>
                         </button>
                         <button
@@ -261,18 +267,20 @@ export function CatalogSection({
                               ? `Hapus ${listing.productName} dari daftar tersimpan`
                               : `Simpan ${listing.productName} ke daftar minat`
                           }
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          className={`inline-flex items-center justify-center gap-1 px-2.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer min-h-[36px] ${
                             saved
                               ? 'bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/30 hover:bg-[#0F2744]/15'
                               : 'text-white bg-[#0F2744] hover:bg-[#0B1E36]'
                           }`}
                         >
                           {saved ? (
-                            <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                            <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           ) : (
-                            <Bookmark className="w-3.5 h-3.5" aria-hidden="true" />
+                            <Bookmark className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           )}
-                          <span>{saved ? 'Tersimpan' : 'Simpan'}</span>
+                          <span className="hidden xl:inline">
+                            {saved ? 'Disimpan' : 'Simpan'}
+                          </span>
                         </button>
                       </div>
                     </div>
