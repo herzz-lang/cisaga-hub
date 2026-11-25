@@ -1,0 +1,6 @@
+{
+  "name": "HERA UMKM",
+  "description": "Platform promosi dan etalase digital pelaku UMKM wilayah Kecamatan Cisaga, Kabupaten Ciamis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
