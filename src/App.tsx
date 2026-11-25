@@ -276,6 +276,17 @@ export default function App() {
     }
   };
 
+  const handleOpenAdmin = () => {
+    setFeedbackMessage(null);
+    setAuthError(null);
+    setActiveView('admin');
+    if (!isDeveloperAdminPath(window.location.pathname)) {
+      window.history.pushState({}, '', '/admin');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    void refreshAuthStatus(adminTokenRef.current);
+  };
+
   const handleAdminSetupSubmit = async (
     username: string,
     password: string,
@@ -594,6 +605,7 @@ export default function App() {
         activeView={activeView}
         savedCount={savedItems.length}
         onNavigatePublic={handleNavigatePublic}
+        onOpenAdmin={handleOpenAdmin}
         onOpenSaved={() => {
           setFeedbackMessage(null);
           setIsSavedDrawerOpen(true);
@@ -679,6 +691,7 @@ export default function App() {
             <PartnerRegistrationSection
               villages={CISAGA_VILLAGES}
               onRegisterFreeUmkm={handleRegisterFreeUmkm}
+              onOpenAdmin={handleOpenAdmin}
             />
 
             <ContactSection onSubmitContactMessage={handleSubmitContactMessage} />
@@ -686,7 +699,7 @@ export default function App() {
         )}
       </main>
 
-      <Footer onNavigatePublic={handleNavigatePublic} />
+      <Footer onNavigatePublic={handleNavigatePublic} onOpenAdmin={handleOpenAdmin} />
 
       <ProductModal
         listing={selectedListing}

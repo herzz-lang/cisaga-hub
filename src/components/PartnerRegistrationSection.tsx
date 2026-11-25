@@ -11,6 +11,7 @@ import { validateFreeRegistrationForm } from '../utils/umkmLogic';
 interface PartnerRegistrationSectionProps {
   villages: VillageInfo[];
   onRegisterFreeUmkm: (data: FreeRegistrationFormData) => Promise<UmkmListing>;
+  onOpenAdmin: () => void;
 }
 
 const BUSINESS_CATEGORIES: BusinessCategory[] = [
@@ -23,6 +24,7 @@ const BUSINESS_CATEGORIES: BusinessCategory[] = [
 export function PartnerRegistrationSection({
   villages,
   onRegisterFreeUmkm,
+  onOpenAdmin,
 }: PartnerRegistrationSectionProps) {
   const [form, setForm] = useState<FreeRegistrationFormData>({
     businessName: '',
@@ -114,6 +116,18 @@ export function PartnerRegistrationSection({
                   Ditampilkan di bagian paling atas halaman (Sorotan Promosi UMKM), urutan teratas
                   katalog, dan tombol Chat WA cepat di kartu utama.
                 </p>
+              </div>
+              <div className="py-4 flex items-center justify-between gap-4">
+                <p className="text-xs text-[#475569]">
+                  Developer pengelola CISAGA HUB? Kelola status dan data UMKM di Panel Admin.
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  className="text-xs font-semibold text-[#0F2744] hover:text-[#EA580C] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Buka Panel Admin
+                </button>
               </div>
             </div>
           </div>
