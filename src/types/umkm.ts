@@ -113,7 +113,7 @@ export interface InquiryReceipt {
   items: SavedPromoItem[];
 }
 
-export type ContactMessageStatus = 'Baru' | 'Dibaca' | 'Selesai';
+export type ContactMessageStatus = 'unread' | 'read' | 'replied';
 
 export type ContactTopic =
   | 'Pertanyaan Umum'
@@ -123,21 +123,22 @@ export type ContactTopic =
   | 'Saran & Masukan';
 
 export interface ContactMessageFormData {
-  senderName: string;
-  whatsapp: string;
+  name: string;
   email: string;
-  subject: ContactTopic;
+  whatsapp: string;
+  subject: string;
   message: string;
+  website?: string;
 }
 
 export interface ContactMessage {
   id: string;
-  senderName: string;
+  name: string;
+  email: string;
   whatsapp: string;
-  email?: string;
-  subject: ContactTopic;
+  subject: string;
   message: string;
   status: ContactMessageStatus;
-  createdAt: string;
+  created_at: string;
 }
 

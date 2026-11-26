@@ -265,92 +265,85 @@ test('server store persists uploaded photo paths, gallery images, and menu/servi
   }
 });
 
-test('server store creates, lists, updates status, and deletes contact messages with flexible contact channels', () => {
+test('server store creates, sanitizes, sorts, updates status (unread/read/replied), and deletes contacts safely', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cisaga-contact-test-'));
   try {
     const store = createServerStore(tempDir);
     assert.equal(store.listContactMessages().length, 0);
 
-    // Rejects invalid email, missing contact methods, or unknown subject
+    // Rejects invalid email, missing subject, invalid optional whatsapp, and honeypot spam trap
     assert.throws(
       () =>
         store.createContactMessage({
-          senderName: 'Rina',
-          whatsapp: '081234567890',
+          name: 'Rina',
           email: 'invalid-email',
-          subject: 'Pertanyaan Umum',
-          message: 'Halo admin',
-        }),
-      /Format alamat email tidak valid/
-    );
-
-    assert.throws(
-      () =>
-        store.createContactMessage({
-          senderName: 'Rina',
-          whatsapp: '',
-          email: '',
-          subject: 'Pertanyaan Umum',
-          message: 'Halo admin',
-        }),
-      /Isi nomor WhatsApp/
-    );
-
-    assert.throws(
-      () =>
-        store.createContactMessage({
-          senderName: 'Rina',
           whatsapp: '081234567890',
-          email: '',
-          subject: 'Topik Asing' as never,
+          subject: 'Pertanyaan Umum',
           message: 'Halo admin',
         }),
-      /Topik pesan tidak valid/
+      /alamat email/
     );
 
-    // Allows short message & phone without leading 0
-    const shortMsg = store.createContactMessage({
-      senderName: 'Budi',
-      whatsapp: '81234567890',
-      email: '',
-      subject: 'Pertanyaan Umum',
-      message: 'Tes',
-    });
-    assert.equal(shortMsg.whatsapp, '81234567890');
-    assert.equal(shortMsg.message, 'Tes');
+    assert.throws(
+      () =>
+        store.createContactMessage({
+          name: 'Rina',
+          email: 'rina@contoh.id',
+          whatsapp: '123',
+          subject: 'Pertanyaan Umum',
+          message: 'Halo admin',
+        }),
+      /8–15 digit/
+    );
 
-    // Allows email-only submission without WhatsApp
+    assert.throws(
+      () =>
+        store.createContactMessage({
+          name: 'Bot',
+          email: 'bot@spam.id',
+          whatsapp: '',
+          subject: 'Promo',
+          message: 'Spam link',
+          website: 'https://spam.example',
+        }),
+      /spam/
+    );
+
+    // Allows email-only submission without WhatsApp & strips dangerous HTML tags
     const emailOnlyMsg = store.createContactMessage({
-      senderName: 'Dewi',
-      whatsapp: '',
+      name: 'Dewi',
       email: 'dewi@contoh.id',
+      whatsapp: '',
       subject: 'Bantuan Pendaftaran',
-      message: 'Mohon bantuannya',
+      message: '<script>alert(1)</script>Mohon bantuannya',
     });
     assert.equal(emailOnlyMsg.whatsapp, '');
     assert.equal(emailOnlyMsg.email, 'dewi@contoh.id');
+    assert.equal(emailOnlyMsg.status, 'unread');
+    assert.equal(emailOnlyMsg.message, 'alert(1)Mohon bantuannya');
 
     const created = store.createContactMessage({
-      senderName: 'Hendra Wijaya',
-      whatsapp: '0812-3456-7890',
+      name: 'Hendra Wijaya',
       email: 'hendra@contoh.id',
+      whatsapp: '0812-3456-7890',
       subject: 'Kemitraan & Reseller',
       message: 'Halo admin CISAGA HUB, saya tertarik menjadi reseller produk gula semut Cisaga.',
     });
-    assert.equal(created.status, 'Baru');
+    assert.equal(created.status, 'unread');
     assert.equal(created.whatsapp, '081234567890');
-    assert.equal(store.listContactMessages().length, 3);
+    assert.ok(created.created_at);
+    assert.equal(store.listContactMessages().length, 2);
 
-    // Re-opening store preserves persisted messages on disk
+    // Re-opening store preserves persisted contacts in contacts.json sorted newest-first
     const reloaded = createServerStore(tempDir);
-    assert.equal(reloaded.listContactMessages().length, 3);
-    assert.equal(reloaded.listContactMessages()[0].senderName, 'Hendra Wijaya');
+    assert.equal(reloaded.listContactMessages().length, 2);
+    assert.equal(reloaded.listContactMessages()[0].name, 'Hendra Wijaya');
 
-    const markedRead = reloaded.updateContactMessageStatus(created.id, 'Dibaca');
-    assert.equal(markedRead.status, 'Dibaca');
+    const markedRead = reloaded.updateContactMessageStatus(created.id, 'read');
+    assert.equal(markedRead.status, 'read');
 
-    const markedDone = reloaded.updateContactMessageStatus(created.id, 'Selesai');
-    assert.equal(markedDone.status, 'Selesai');
+    const markedReplied = reloaded.updateContactMessageStatus(created.id, 'replied');
+    assert.equal(markedReplied.status, 'replied');
 
     assert.throws(
       () => reloaded.updateContactMessageStatus(created.id, 'StatusNgawur'),
@@ -358,7 +351,7 @@ test('server store creates, lists, updates status, and deletes contact messages 
     );
 
     reloaded.deleteContactMessage(created.id);
-    assert.equal(reloaded.listContactMessages().length, 2);
+    assert.equal(reloaded.listContactMessages().length, 1);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

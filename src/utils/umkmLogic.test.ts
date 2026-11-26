@@ -210,46 +210,46 @@ test('formatRupiah and buildWhatsAppUrl format cleanly', () => {
   );
 });
 
-test('validateContactMessageForm validates sender, flexible phone or email, and message length', () => {
+test('validateContactMessageForm validates name, email, optional whatsapp, subject, and message length', () => {
   const invalid = validateContactMessageForm({
-    senderName: 'A',
-    whatsapp: '123',
+    name: 'A',
     email: 'bukan-email',
-    subject: 'Pertanyaan Umum',
+    whatsapp: '123',
+    subject: 'X',
     message: 'A',
   });
-  assert.ok(invalid.senderName);
-  assert.ok(invalid.whatsapp);
+  assert.ok(invalid.name);
   assert.ok(invalid.email);
+  assert.ok(invalid.whatsapp);
+  assert.ok(invalid.subject);
   assert.ok(invalid.message);
 
-  const missingBothContacts = validateContactMessageForm({
-    senderName: 'Dede',
-    whatsapp: '',
+  const missingEmail = validateContactMessageForm({
+    name: 'Dede',
     email: '',
+    whatsapp: '081234567890',
     subject: 'Pertanyaan Umum',
     message: 'Tes',
   });
-  assert.ok(missingBothContacts.whatsapp);
-  assert.equal(missingBothContacts.message, undefined);
-
-  const validShortPhoneNoZero = validateContactMessageForm({
-    senderName: 'Dede Kurniawan',
-    whatsapp: '81234567890',
-    email: '',
-    subject: 'Promosi UMKM Premium',
-    message: 'Tes pesan singkat',
-  });
-  assert.deepEqual(validShortPhoneNoZero, {});
+  assert.ok(missingEmail.email);
 
   const validEmailOnly = validateContactMessageForm({
-    senderName: 'Siti Rahma',
-    whatsapp: '',
+    name: 'Siti Rahma',
     email: 'siti@contoh.id',
-    subject: 'Pertanyaan Umum',
+    whatsapp: '',
+    subject: 'Permintaan Kemitraan Produk',
     message: 'Halo admin',
   });
   assert.deepEqual(validEmailOnly, {});
+
+  const validWithOptionalWhatsapp = validateContactMessageForm({
+    name: 'Dede Kurniawan',
+    email: 'dede@contoh.id',
+    whatsapp: '81234567890',
+    subject: 'Promosi UMKM Premium',
+    message: 'Tes pesan singkat',
+  });
+  assert.deepEqual(validWithOptionalWhatsapp, {});
 });
 
 test('isDeveloperAdminPath grants admin view entry only on dedicated developer paths', () => {

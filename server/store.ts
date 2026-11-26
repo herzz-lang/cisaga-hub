@@ -45,20 +45,45 @@ export class StoreHttpError extends Error {
 const VALID_CATEGORIES: BusinessCategory[] = ['Kuliner', 'Kerajinan', 'Agribisnis', 'Busana'];
 const VALID_TIERS: UmkmTier[] = ['premium', 'reguler'];
 const VALID_STATUSES: UmkmStatus[] = ['Aktif', 'Menunggu Verifikasi', 'Nonaktif'];
-const VALID_CONTACT_TOPICS: ContactTopic[] = [
-  'Pertanyaan Umum',
-  'Promosi UMKM Premium',
-  'Kemitraan & Reseller',
-  'Bantuan Pendaftaran',
-  'Saran & Masukan',
-];
-const VALID_CONTACT_STATUSES: ContactMessageStatus[] = ['Baru', 'Dibaca', 'Selesai'];
+const VALID_CONTACT_STATUSES: ContactMessageStatus[] = ['unread', 'read', 'replied'];
 const VALID_VILLAGES = new Set(CISAGA_VILLAGES.map((v) => v.name));
 const ALLOWED_IMAGE_URLS = new Set(UMKM_IMAGE_PRESETS.map((p) => p.url));
 
-function isValidOptionalEmail(email: string): boolean {
-  if (!email) return true;
-  if (email.length > 120) return false;
+function sanitizeTextInput(raw: unknown, allowMultiline = false): string {
+  if (typeof raw !== 'string') return '';
+  const withoutControlChars = raw
+    .replace(/\u0000/g, '')
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '');
+  if (allowMultiline) {
+    return withoutControlChars
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  return withoutControlChars.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeContactStatus(raw: unknown): ContactMessageStatus | null {
+  switch (raw) {
+    case 'unread':
+    case 'Baru':
+      return 'unread';
+    case 'read':
+    case 'Dibaca':
+      return 'read';
+    case 'replied':
+    case 'Selesai':
+      return 'replied';
+    default:
+      return null;
+  }
+}
+
+function isValidEmailAddress(email: string): boolean {
+  if (!email || email.length > 120) return false;
   return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email);
 }
 
@@ -130,7 +155,8 @@ function resolveSafeGalleryImages(rawGallery: unknown, primaryImage: string): st
 export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')) {
   const listingsPath = path.join(dataDir, 'umkm-listings.json');
   const authPath = path.join(dataDir, 'admin-auth.json');
-  const messagesPath = path.join(dataDir, 'contact-messages.json');
+  const contactsPath = path.join(dataDir, 'contacts.json');
+  const legacyMessagesPath = path.join(dataDir, 'contact-messages.json');
 
   const ensureDataDir = () => {
     if (!fs.existsSync(dataDir)) {
@@ -181,13 +207,56 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
     writeJsonAtomic(listingsPath, listings);
   };
 
+  const normalizeContactRecord = (raw: unknown): ContactMessage | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    const id = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : '';
+    const name = sanitizeTextInput(obj.name ?? obj.senderName, false);
+    const email = sanitizeTextInput(obj.email, false);
+    const whatsapp = typeof obj.whatsapp === 'string' ? obj.whatsapp.replace(/[^0-9]/g, '') : '';
+    const subject = sanitizeTextInput(obj.subject, false) || 'Pertanyaan Umum';
+    const message = sanitizeTextInput(obj.message, true);
+    const status = normalizeContactStatus(obj.status) ?? 'unread';
+    const createdAtRaw = obj.created_at ?? obj.createdAt;
+    const created_at =
+      typeof createdAtRaw === 'string' && !Number.isNaN(Date.parse(createdAtRaw))
+        ? createdAtRaw
+        : new Date().toISOString();
+
+    if (!id || !name || !message) return null;
+    return {
+      id,
+      name,
+      email,
+      whatsapp,
+      subject,
+      message,
+      status,
+      created_at,
+    };
+  };
+
   const readMessages = (): ContactMessage[] => {
     try {
-      if (fs.existsSync(messagesPath)) {
-        const raw = fs.readFileSync(messagesPath, 'utf8');
+      const targetPath = fs.existsSync(contactsPath)
+        ? contactsPath
+        : fs.existsSync(legacyMessagesPath)
+          ? legacyMessagesPath
+          : null;
+      if (targetPath) {
+        const raw = fs.readFileSync(targetPath, 'utf8');
         const parsed = JSON.parse(raw) as unknown;
         if (Array.isArray(parsed)) {
-          return parsed as ContactMessage[];
+          const normalized = parsed
+            .map(normalizeContactRecord)
+            .filter((item): item is ContactMessage => item !== null)
+            .sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+          if (targetPath === legacyMessagesPath && !fs.existsSync(contactsPath)) {
+            writeJsonAtomic(contactsPath, normalized);
+          }
+          return normalized;
         }
       }
     } catch {
@@ -197,7 +266,7 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
   };
 
   const writeMessages = (messages: ContactMessage[]) => {
-    writeJsonAtomic(messagesPath, messages);
+    writeJsonAtomic(contactsPath, messages);
   };
 
   const readClaimedAuth = (): ClaimedAdminRecord | null => {
@@ -617,38 +686,32 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
 
   const listContactMessages = (): ContactMessage[] => readMessages();
 
-  const createContactMessage = (raw: Partial<ContactMessageFormData>): ContactMessage => {
-    const senderName = typeof raw.senderName === 'string' ? raw.senderName.trim() : '';
-    const whatsapp = typeof raw.whatsapp === 'string' ? raw.whatsapp.trim() : '';
-    const whatsappDigits = whatsapp.replace(/[^0-9]/g, '');
-    const email = typeof raw.email === 'string' ? raw.email.trim() : '';
-    const rawSubject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
-    const subject: ContactTopic | null =
-      rawSubject === ''
-        ? VALID_CONTACT_TOPICS[0]
-        : VALID_CONTACT_TOPICS.includes(rawSubject as ContactTopic)
-          ? (rawSubject as ContactTopic)
-          : null;
-    const message = typeof raw.message === 'string' ? raw.message.trim() : '';
+  const createContactMessage = (
+    raw: Partial<ContactMessageFormData> & { senderName?: unknown }
+  ): ContactMessage => {
+    const honeypot = typeof raw.website === 'string' ? raw.website.trim() : '';
+    if (honeypot.length > 0) {
+      throw new StoreHttpError(400, 'Permintaan ditolak oleh sistem proteksi spam.');
+    }
 
-    if (senderName.length < 2 || senderName.length > 80) {
+    const name = sanitizeTextInput(raw.name ?? raw.senderName, false);
+    const email = sanitizeTextInput(raw.email, false);
+    const whatsappRaw = typeof raw.whatsapp === 'string' ? raw.whatsapp.trim() : '';
+    const whatsappDigits = whatsappRaw.replace(/[^0-9]/g, '');
+    const subject = sanitizeTextInput(raw.subject, false);
+    const message = sanitizeTextInput(raw.message, true);
+
+    if (name.length < 2 || name.length > 80) {
       throw new StoreHttpError(400, 'Nama pengirim harus 2–80 karakter.');
     }
-    if (email.length > 0 && !isValidOptionalEmail(email)) {
-      throw new StoreHttpError(400, 'Format alamat email tidak valid.');
+    if (!isValidEmailAddress(email)) {
+      throw new StoreHttpError(400, 'Masukkan alamat email yang valid.');
     }
-    if (whatsappDigits.length > 0) {
-      if (!isValidContactPhone(whatsapp)) {
-        throw new StoreHttpError(400, 'Masukkan nomor WhatsApp atau telepon aktif (8–15 digit).');
-      }
-    } else if (!email) {
-      throw new StoreHttpError(
-        400,
-        'Isi nomor WhatsApp/HP aktif atau alamat email agar admin bisa membalas.'
-      );
+    if (whatsappDigits.length > 0 && !isValidContactPhone(whatsappRaw)) {
+      throw new StoreHttpError(400, 'Nomor WhatsApp harus berisi 8–15 digit angka jika diisi.');
     }
-    if (!subject) {
-      throw new StoreHttpError(400, 'Topik pesan tidak valid.');
+    if (subject.length < 2 || subject.length > 120) {
+      throw new StoreHttpError(400, 'Subjek pesan harus 2–120 karakter.');
     }
     if (message.length < 2 || message.length > 1500) {
       throw new StoreHttpError(400, 'Isi pesan harus 2–1.500 karakter.');
@@ -656,14 +719,14 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
 
     const randomSuffix = Math.random().toString(36).slice(2, 6);
     const created: ContactMessage = {
-      id: `msg-${Date.now()}-${randomSuffix}`,
-      senderName,
+      id: `cnt-${Date.now()}-${randomSuffix}`,
+      name,
+      email,
       whatsapp: whatsappDigits,
-      ...(email ? { email } : {}),
       subject,
       message,
-      status: 'Baru',
-      createdAt: new Date().toISOString(),
+      status: 'unread',
+      created_at: new Date().toISOString(),
     };
 
     const current = readMessages();
@@ -671,14 +734,11 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
     return created;
   };
 
-  const updateContactMessageStatus = (
-    id: string,
-    rawStatus: unknown
-  ): ContactMessage => {
-    if (!VALID_CONTACT_STATUSES.includes(rawStatus as ContactMessageStatus)) {
+  const updateContactMessageStatus = (id: string, rawStatus: unknown): ContactMessage => {
+    const status = normalizeContactStatus(rawStatus);
+    if (!status || !VALID_CONTACT_STATUSES.includes(status)) {
       throw new StoreHttpError(400, 'Status pesan tidak valid.');
     }
-    const status = rawStatus as ContactMessageStatus;
     const current = readMessages();
     const existing = current.find((item) => item.id === id);
     if (!existing) {

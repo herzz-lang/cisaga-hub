@@ -27,6 +27,7 @@ import type {
 } from './types/umkm';
 import {
   filterAndSortListings,
+  getContactStatusLabel,
   getPremiumTopListings,
   isDeveloperAdminPath,
   isListingSaved,
@@ -125,7 +126,7 @@ export default function App() {
 
   const fetchAdminMessages = useCallback(async (token: string): Promise<void> => {
     try {
-      const res = await fetch('/api/admin/messages', {
+      const res = await fetch('/api/admin/contacts', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) {
@@ -136,9 +137,13 @@ export default function App() {
         return;
       }
       if (!res.ok) return;
-      const data = (await res.json()) as { messages?: ContactMessage[] };
-      if (Array.isArray(data.messages)) {
-        setAdminMessages(data.messages);
+      const data = (await res.json()) as {
+        contacts?: ContactMessage[];
+        messages?: ContactMessage[];
+      };
+      const items = data.contacts ?? data.messages;
+      if (Array.isArray(items)) {
+        setAdminMessages(items);
       }
     } catch {
       // Keep current inbox state if offline or request interrupted
@@ -547,7 +552,7 @@ export default function App() {
   const handleSubmitContactMessage = async (
     data: ContactMessageFormData
   ): Promise<ContactMessage> => {
-    const res = await fetch('/api/contact-messages', {
+    const res = await fetch('/api/contacts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -555,17 +560,24 @@ export default function App() {
     if (!res.ok) {
       throw new Error(await readErrorMessage(res, 'Gagal mengirim pesan ke admin.'));
     }
-    const body = (await res.json()) as { message: ContactMessage };
+    const body = (await res.json()) as {
+      contact?: ContactMessage;
+      message?: ContactMessage;
+    };
+    const saved = body.contact ?? body.message;
+    if (!saved) {
+      throw new Error('Respons server tidak valid.');
+    }
     setFeedbackHasSavedAction(false);
     setFeedbackMessage('Pesan berhasil dikirim ke Portal Admin.');
-    return body.message;
+    return saved;
   };
 
   const handleUpdateMessageStatus = async (
     id: string,
     status: ContactMessageStatus
   ): Promise<void> => {
-    const res = await requireAdminFetch(`/api/admin/messages/${encodeURIComponent(id)}/status`, {
+    const res = await requireAdminFetch(`/api/admin/contacts/${encodeURIComponent(id)}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -574,14 +586,21 @@ export default function App() {
       setFeedbackMessage(await readErrorMessage(res, 'Gagal memperbarui status pesan.'));
       return;
     }
-    const body = (await res.json()) as { message: ContactMessage };
-    setAdminMessages((prev) => prev.map((m) => (m.id === id ? body.message : m)));
-    setFeedbackMessage(`Status pesan dari ${body.message.senderName} diubah menjadi ${status}.`);
+    const body = (await res.json()) as {
+      contact?: ContactMessage;
+      message?: ContactMessage;
+    };
+    const updated = body.contact ?? body.message;
+    if (!updated) return;
+    setAdminMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    setFeedbackMessage(
+      `Status pesan dari ${updated.name} diubah menjadi ${getContactStatusLabel(status)}.`
+    );
   };
 
   const handleDeleteMessage = async (id: string): Promise<void> => {
     const target = adminMessages.find((m) => m.id === id);
-    const res = await requireAdminFetch(`/api/admin/messages/${encodeURIComponent(id)}`, {
+    const res = await requireAdminFetch(`/api/admin/contacts/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
     if (!res.ok) {
@@ -590,7 +609,7 @@ export default function App() {
     }
     setAdminMessages((prev) => prev.filter((m) => m.id !== id));
     if (target) {
-      setFeedbackMessage(`Pesan dari ${target.senderName} telah dihapus.`);
+      setFeedbackMessage(`Pesan dari ${target.name} telah dihapus.`);
     }
   };
 

@@ -478,7 +478,7 @@ export const CONTACT_TOPICS: ContactTopic[] = [
 
 export function isValidEmailAddress(email: string): boolean {
   const trimmed = email.trim();
-  if (!trimmed) return true;
+  if (!trimmed) return false;
   if (trimmed.length > 120) return false;
   return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(trimmed);
 }
@@ -488,31 +488,43 @@ export function isValidContactPhone(phone: string): boolean {
   return digits.length >= 8 && digits.length <= 15;
 }
 
+export function getContactStatusLabel(status: string): string {
+  switch (status) {
+    case 'unread':
+    case 'Baru':
+      return 'Belum Dibaca';
+    case 'read':
+    case 'Dibaca':
+      return 'Sudah Dibaca';
+    case 'replied':
+    case 'Selesai':
+      return 'Sudah Dibalas';
+    default:
+      return status;
+  }
+}
+
 export function validateContactMessageForm(
   form: ContactMessageFormData
 ): Partial<Record<keyof ContactMessageFormData, string>> {
   const errors: Partial<Record<keyof ContactMessageFormData, string>> = {};
-  const name = form.senderName.trim();
-  const whatsappDigits = form.whatsapp.replace(/[^0-9]/g, '');
-  const message = form.message.trim();
+  const name = form.name.trim();
   const email = form.email.trim();
-  const hasValidEmail = email.length > 0 && isValidEmailAddress(email);
+  const whatsappDigits = form.whatsapp.replace(/[^0-9]/g, '');
+  const subject = form.subject.trim();
+  const message = form.message.trim();
 
   if (name.length < 2 || name.length > 80) {
-    errors.senderName = 'Masukkan nama lengkap Anda (2–80 karakter).';
+    errors.name = 'Masukkan nama lengkap Anda (2–80 karakter).';
   }
-  if (whatsappDigits.length > 0) {
-    if (!isValidContactPhone(form.whatsapp)) {
-      errors.whatsapp = 'Masukkan nomor WhatsApp/HP aktif 8–15 digit (contoh: 081234567890).';
-    }
-  } else if (!hasValidEmail) {
-    errors.whatsapp = 'Isi nomor WhatsApp/HP aktif atau alamat email yang valid agar admin bisa membalas.';
+  if (!isValidEmailAddress(email)) {
+    errors.email = 'Masukkan alamat email yang valid (contoh: nama@contoh.id).';
   }
-  if (email.length > 0 && !isValidEmailAddress(email)) {
-    errors.email = 'Format alamat email tidak valid.';
+  if (whatsappDigits.length > 0 && !isValidContactPhone(form.whatsapp)) {
+    errors.whatsapp = 'Nomor WhatsApp harus berisi 8–15 digit angka jika diisi.';
   }
-  if (!CONTACT_TOPICS.includes(form.subject)) {
-    errors.subject = 'Pilih topik pesan yang tersedia.';
+  if (subject.length < 2 || subject.length > 120) {
+    errors.subject = 'Masukkan subjek pesan (2–120 karakter).';
   }
   if (message.length < 2 || message.length > 1500) {
     errors.message = 'Isi pesan minimal 2 karakter (maksimal 1.500 karakter).';

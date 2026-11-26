@@ -1,9 +1,10 @@
-import { CheckCircle2, Clock, Mail, MapPin, Send } from 'lucide-react';
+import { CheckCircle2, Clock, Loader2, Mail, MapPin, Send } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import type { ContactMessage, ContactMessageFormData, ContactTopic } from '../types/umkm';
+import type { ContactMessage, ContactMessageFormData } from '../types/umkm';
 import {
   CONTACT_TOPICS,
   formatContactDate,
+  getContactStatusLabel,
   validateContactMessageForm,
 } from '../utils/umkmLogic';
 
@@ -12,11 +13,12 @@ interface ContactSectionProps {
 }
 
 const createInitialForm = (): ContactMessageFormData => ({
-  senderName: '',
-  whatsapp: '',
+  name: '',
   email: '',
-  subject: CONTACT_TOPICS[0],
+  whatsapp: '',
+  subject: '',
   message: '',
+  website: '',
 });
 
 export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) {
@@ -116,9 +118,10 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
               </div>
 
               <p className="text-sm text-[#475569] leading-relaxed">
-                Terima kasih, <strong className="text-[#0F2744]">{sentMessage.senderName}</strong>.
-                Pesan Anda sudah tersimpan di sistem backend dan tampil di kotak masuk pengelola
-                CISAGA HUB untuk segera dibalas melalui WhatsApp atau email.
+                Terima kasih, <strong className="text-[#0F2744]">{sentMessage.name}</strong>. Pesan
+                Anda sudah tersimpan secara permanen di database dan tampil di kotak masuk admin
+                CISAGA HUB untuk segera ditanggapi melalui email
+                {sentMessage.whatsapp ? ' atau WhatsApp' : ''}.
               </p>
 
               <div className="p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg space-y-1.5 text-xs text-[#475569]">
@@ -130,13 +133,16 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     </span>
                   </span>
                   <span className="font-mono tabular-nums">
-                    {formatContactDate(sentMessage.createdAt)}
+                    {formatContactDate(sentMessage.created_at)}
                   </span>
                 </div>
                 <p>
-                  Topik:{' '}
+                  Subjek:{' '}
                   <span className="font-semibold text-[#0F2744]">{sentMessage.subject}</span> ·
-                  Status: <span className="font-semibold text-[#C2410C]">{sentMessage.status}</span>
+                  Status:{' '}
+                  <span className="font-semibold text-[#C2410C]">
+                    {getContactStatusLabel(sentMessage.status)}
+                  </span>
                 </p>
               </div>
 
@@ -155,7 +161,8 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                   Formulir Hubungi Saya
                 </h3>
                 <p className="text-xs text-[#475569] mt-1">
-                  Isi data kontak Anda agar pesan langsung masuk ke Kotak Masuk Web Portal Admin.
+                  Isi formulir berikut agar pesan Anda langsung tersimpan dan diteruskan ke Panel
+                  Admin.
                 </p>
               </div>
 
@@ -168,37 +175,75 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                 </div>
               )}
 
+              {/* Honeypot anti-spam trap */}
+              <div className="hidden" aria-hidden="true">
+                <label htmlFor="contact-website">Website</label>
+                <input
+                  id="contact-website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={form.website ?? ''}
+                  onChange={(e) => setForm({ ...form, website: e.target.value })}
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label
-                    htmlFor="contact-sender-name"
+                    htmlFor="contact-name"
                     className="block text-xs font-semibold text-[#0F2744] mb-1.5"
                   >
-                    Nama Lengkap
+                    Nama Lengkap <span className="text-[#C2410C]">*</span>
                   </label>
                   <input
-                    id="contact-sender-name"
+                    id="contact-name"
                     type="text"
-                    value={form.senderName}
+                    required
+                    value={form.name}
                     onChange={(e) => {
-                      setForm({ ...form, senderName: e.target.value });
-                      if (errors.senderName) setErrors({ ...errors, senderName: undefined });
+                      setForm({ ...form, name: e.target.value });
+                      if (errors.name) setErrors({ ...errors, name: undefined });
                       if (submitError) setSubmitError(null);
                     }}
                     placeholder="Nama lengkap Anda"
                     className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
                   />
-                  {errors.senderName && (
-                    <p className="text-xs text-[#B91C1C] mt-1">{errors.senderName}</p>
-                  )}
+                  {errors.name && <p className="text-xs text-[#B91C1C] mt-1">{errors.name}</p>}
                 </div>
 
+                <div>
+                  <label
+                    htmlFor="contact-email"
+                    className="block text-xs font-semibold text-[#0F2744] mb-1.5"
+                  >
+                    Email <span className="text-[#C2410C]">*</span>
+                  </label>
+                  <input
+                    id="contact-email"
+                    type="email"
+                    required
+                    value={form.email}
+                    onChange={(e) => {
+                      setForm({ ...form, email: e.target.value });
+                      if (errors.email) setErrors({ ...errors, email: undefined });
+                      if (submitError) setSubmitError(null);
+                    }}
+                    placeholder="nama@contoh.id"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
+                  />
+                  {errors.email && <p className="text-xs text-[#B91C1C] mt-1">{errors.email}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label
                     htmlFor="contact-whatsapp"
                     className="block text-xs font-semibold text-[#0F2744] mb-1.5"
                   >
-                    Nomor WhatsApp / HP
+                    Nomor WhatsApp (Opsional)
                   </label>
                   <input
                     id="contact-whatsapp"
@@ -216,58 +261,34 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     <p className="text-xs text-[#B91C1C] mt-1">{errors.whatsapp}</p>
                   )}
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="contact-email"
-                    className="block text-xs font-semibold text-[#0F2744] mb-1.5"
-                  >
-                    Email (Opsional jika WA diisi)
-                  </label>
-                  <input
-                    id="contact-email"
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => {
-                      setForm({ ...form, email: e.target.value });
-                      if (errors.email || errors.whatsapp) {
-                        setErrors({ ...errors, email: undefined, whatsapp: undefined });
-                      }
-                      if (submitError) setSubmitError(null);
-                    }}
-                    placeholder="nama@contoh.id"
-                    className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
-                  />
-                  {errors.email && (
-                    <p className="text-xs text-[#B91C1C] mt-1">{errors.email}</p>
-                  )}
-                </div>
 
                 <div>
                   <label
                     htmlFor="contact-subject"
                     className="block text-xs font-semibold text-[#0F2744] mb-1.5"
                   >
-                    Topik Pesan
+                    Subjek Pesan <span className="text-[#C2410C]">*</span>
                   </label>
-                  <select
+                  <input
                     id="contact-subject"
+                    type="text"
+                    required
+                    list="contact-subject-suggestions"
+                    maxLength={120}
                     value={form.subject}
                     onChange={(e) => {
-                      setForm({ ...form, subject: e.target.value as ContactTopic });
+                      setForm({ ...form, subject: e.target.value });
                       if (errors.subject) setErrors({ ...errors, subject: undefined });
                       if (submitError) setSubmitError(null);
                     }}
-                    className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744] cursor-pointer"
-                  >
+                    placeholder="Contoh: Pertanyaan Umum / Promosi UMKM"
+                    className="w-full px-3.5 py-2.5 text-sm bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:bg-white focus:border-[#0F2744] focus:ring-1 focus:ring-[#0F2744]"
+                  />
+                  <datalist id="contact-subject-suggestions">
                     {CONTACT_TOPICS.map((topic) => (
-                      <option key={topic} value={topic}>
-                        {topic}
-                      </option>
+                      <option key={topic} value={topic} />
                     ))}
-                  </select>
+                  </datalist>
                   {errors.subject && (
                     <p className="text-xs text-[#B91C1C] mt-1">{errors.subject}</p>
                   )}
@@ -280,7 +301,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                     htmlFor="contact-message"
                     className="block text-xs font-semibold text-[#0F2744]"
                   >
-                    Isi Pesan
+                    Isi Pesan <span className="text-[#C2410C]">*</span>
                   </label>
                   <span className="text-[11px] font-mono tabular-nums text-[#475569]">
                     {form.message.length}/1500
@@ -289,6 +310,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                 <textarea
                   id="contact-message"
                   rows={4}
+                  required
                   maxLength={1500}
                   value={form.message}
                   onChange={(e) => {
@@ -309,8 +331,12 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
                 disabled={isSubmitting}
                 className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-sm font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
               >
-                <Send className="w-4 h-4" aria-hidden="true" />
-                <span>{isSubmitting ? 'Mengirim Pesan...' : 'Kirim Pesan ke Admin'}</span>
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send className="w-4 h-4" aria-hidden="true" />
+                )}
+                <span>{isSubmitting ? 'Mengirim Pesan...' : 'Kirim Pesan'}</span>
               </button>
             </form>
           )}

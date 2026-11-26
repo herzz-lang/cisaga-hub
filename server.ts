@@ -17,7 +17,11 @@ const SESSION_SECRET =
     ? process.env.ADMIN_SESSION_SECRET.trim()
     : crypto.randomBytes(32).toString('hex');
 
-const store = createServerStore();
+const DATA_DIR =
+  process.env.DATA_DIR && process.env.DATA_DIR.trim().length > 0
+    ? path.resolve(process.cwd(), process.env.DATA_DIR.trim())
+    : undefined;
+const store = createServerStore(DATA_DIR);
 const revokedTokens = new Set<string>();
 
 interface RateLimitEntry {
@@ -53,7 +57,9 @@ function clearAuthAttempts(ipKey: string): void {
 }
 
 const contactSubmissions = new Map<string, RateLimitEntry>();
-const MAX_CONTACT_SUBMISSIONS = 60;
+const MAX_CONTACT_SUBMISSIONS = 20;
+const recentContactDigests = new Map<string, number>();
+const DUPLICATE_COOLDOWN_MS = 60 * 1000;
 
 function checkAndRecordContactRateLimit(ipKey: string): boolean {
   const now = Date.now();
@@ -67,6 +73,25 @@ function checkAndRecordContactRateLimit(ipKey: string): boolean {
   }
   entry.count += 1;
   return true;
+}
+
+function isDuplicateContactBurst(ipKey: string, body: Record<string, unknown>): boolean {
+  const now = Date.now();
+  const digest = crypto
+    .createHash('sha256')
+    .update(
+      `${ipKey}|${String(body.email ?? '').trim().toLowerCase()}|${String(body.subject ?? '').trim()}|${String(body.message ?? '').trim()}`
+    )
+    .digest('hex');
+  const expiresAt = recentContactDigests.get(digest);
+  for (const [key, exp] of recentContactDigests.entries()) {
+    if (now >= exp) recentContactDigests.delete(key);
+  }
+  if (expiresAt && now < expiresAt) {
+    return true;
+  }
+  recentContactDigests.set(digest, now + DUPLICATE_COOLDOWN_MS);
+  return false;
 }
 
 function getEnvCredentials() {
@@ -148,8 +173,8 @@ async function startServer() {
     }
   });
 
-  // Public "Hubungi Kami" message submission -> persisted for Developer Admin Portal inbox
-  app.post('/api/contact-messages', (req, res) => {
+  // Public "Hubungi Saya" message submission -> persisted to contacts store for Admin Portal
+  const handlePublicContactSubmit = (req: Request, res: Response) => {
     const ipKey = req.ip || 'local';
     if (!checkAndRecordContactRateLimit(ipKey)) {
       res.status(429).json({
@@ -157,13 +182,24 @@ async function startServer() {
       });
       return;
     }
+    const payload =
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    if (isDuplicateContactBurst(ipKey, payload)) {
+      res.status(429).json({
+        error: 'Pesan yang sama baru saja dikirim. Mohon tunggu 1 menit sebelum mengirim ulang.',
+      });
+      return;
+    }
     try {
-      const created = store.createContactMessage(req.body ?? {});
-      res.status(201).json({ message: created });
+      const created = store.createContactMessage(payload);
+      res.status(201).json({ contact: created, message: created });
     } catch (err) {
       handleApiError(err, res);
     }
-  });
+  };
+
+  app.post('/api/contacts', handlePublicContactSubmit);
+  app.post('/api/contact-messages', handlePublicContactSubmit);
 
   // Developer Auth status
   app.get('/api/admin/auth/status', (req, res) => {
@@ -340,16 +376,17 @@ async function startServer() {
   });
 
   // Protected Developer Admin Contact Inbox routes
-  app.get('/api/admin/messages', requireDeveloperAuth, (_req, res) => {
+  const handleAdminListContacts = (_req: Request, res: Response) => {
     try {
-      const messages = store.listContactMessages();
-      res.json({ messages });
+      const contacts = store.listContactMessages();
+      const unreadCount = contacts.filter((c) => c.status === 'unread').length;
+      res.json({ contacts, messages: contacts, unreadCount });
     } catch (err) {
       handleApiError(err, res);
     }
-  });
+  };
 
-  app.patch('/api/admin/messages/:id/status', requireDeveloperAuth, (req, res) => {
+  const handleAdminUpdateContactStatus = (req: Request, res: Response) => {
     const id = req.params.id;
     if (!isValidListingId(id)) {
       res.status(400).json({ error: 'ID pesan tidak valid.' });
@@ -357,13 +394,13 @@ async function startServer() {
     }
     try {
       const updated = store.updateContactMessageStatus(id, req.body?.status);
-      res.json({ message: updated });
+      res.json({ contact: updated, message: updated });
     } catch (err) {
       handleApiError(err, res);
     }
-  });
+  };
 
-  app.delete('/api/admin/messages/:id', requireDeveloperAuth, (req, res) => {
+  const handleAdminDeleteContact = (req: Request, res: Response) => {
     const id = req.params.id;
     if (!isValidListingId(id)) {
       res.status(400).json({ error: 'ID pesan tidak valid.' });
@@ -375,7 +412,14 @@ async function startServer() {
     } catch (err) {
       handleApiError(err, res);
     }
-  });
+  };
+
+  app.get('/api/admin/contacts', requireDeveloperAuth, handleAdminListContacts);
+  app.get('/api/admin/messages', requireDeveloperAuth, handleAdminListContacts);
+  app.patch('/api/admin/contacts/:id/status', requireDeveloperAuth, handleAdminUpdateContactStatus);
+  app.patch('/api/admin/messages/:id/status', requireDeveloperAuth, handleAdminUpdateContactStatus);
+  app.delete('/api/admin/contacts/:id', requireDeveloperAuth, handleAdminDeleteContact);
+  app.delete('/api/admin/messages/:id', requireDeveloperAuth, handleAdminDeleteContact);
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

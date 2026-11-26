@@ -4,6 +4,7 @@ import {
   Check,
   CheckCheck,
   Edit3,
+  Eye,
   ImagePlus,
   Inbox,
   LogOut,
@@ -16,7 +17,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { UMKM_IMAGE_PRESETS } from '../data/cisagaData';
 import type {
   AdminUmkmFormData,
@@ -33,6 +34,7 @@ import {
   buildWhatsAppUrl,
   formatContactDate,
   formatRupiah,
+  getContactStatusLabel,
   getListingAllImages,
   isValidEmailAddress,
   validateAdminUmkmForm,
@@ -107,6 +109,9 @@ export function AdminPanelView({
 }: AdminPanelViewProps) {
   const [workspaceTab, setWorkspaceTab] = useState<AdminWorkspaceTab>('umkm');
   const [messageFilter, setMessageFilter] = useState<'all' | ContactMessageStatus>('all');
+  const [messageSearch, setMessageSearch] = useState<string>('');
+  const [messageSortOrder, setMessageSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<string | null>(null);
   const [isRefreshingMessages, setIsRefreshingMessages] = useState<boolean>(false);
   const [filterTab, setFilterTab] = useState<AdminFilterTab>('all');
@@ -133,16 +138,52 @@ export function AdminPanelView({
 
   const messageStats = useMemo(() => {
     const total = messages.length;
-    const baru = messages.filter((m) => m.status === 'Baru').length;
-    const dibaca = messages.filter((m) => m.status === 'Dibaca').length;
-    const selesai = messages.filter((m) => m.status === 'Selesai').length;
-    return { total, baru, dibaca, selesai };
+    const unread = messages.filter((m) => m.status === 'unread').length;
+    const read = messages.filter((m) => m.status === 'read').length;
+    const replied = messages.filter((m) => m.status === 'replied').length;
+    return { total, unread, read, replied };
   }, [messages]);
 
   const filteredMessages = useMemo(() => {
-    if (messageFilter === 'all') return messages;
-    return messages.filter((m) => m.status === messageFilter);
-  }, [messages, messageFilter]);
+    const q = messageSearch.trim().toLowerCase();
+    const list = messages.filter((m) => {
+      if (messageFilter !== 'all' && m.status !== messageFilter) return false;
+      if (!q) return true;
+      return (
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.subject.toLowerCase().includes(q) ||
+        m.message.toLowerCase().includes(q)
+      );
+    });
+    return [...list].sort((a, b) => {
+      const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return messageSortOrder === 'newest' ? diff : -diff;
+    });
+  }, [messages, messageFilter, messageSearch, messageSortOrder]);
+
+  const selectedMessage = useMemo(
+    () => (selectedMessageId ? messages.find((m) => m.id === selectedMessageId) ?? null : null),
+    [messages, selectedMessageId]
+  );
+
+  const handleOpenMessageDetail = (msg: ContactMessage) => {
+    setSelectedMessageId(msg.id);
+    if (msg.status === 'unread') {
+      void onUpdateMessageStatus(msg.id, 'read');
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedMessageId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedMessageId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedMessageId]);
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -447,15 +488,16 @@ export function AdminPanelView({
         >
           <Inbox className="w-4 h-4" aria-hidden="true" />
           <span>Kotak Masuk Pesan ({messages.length})</span>
-          {messageStats.baru > 0 && (
+          {messageStats.unread > 0 && (
             <span
+              data-testid="admin-unread-badge"
               className={`font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded ${
                 workspaceTab === 'messages'
                   ? 'bg-[#EA580C] text-white'
                   : 'bg-[#EA580C]/15 text-[#C2410C]'
               }`}
             >
-              {messageStats.baru} Baru
+              {messageStats.unread} Belum Dibaca
             </span>
           )}
         </button>
@@ -472,27 +514,30 @@ export function AdminPanelView({
               </p>
             </div>
             <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
-              <p className="text-xs text-[#475569] mb-1">Pesan Baru</p>
-              <p className="font-mono tabular-nums text-2xl font-semibold text-[#EA580C]">
-                {messageStats.baru}
+              <p className="text-xs text-[#475569] mb-1">Belum Dibaca</p>
+              <p
+                data-testid="admin-kpi-unread"
+                className="font-mono tabular-nums text-2xl font-semibold text-[#EA580C]"
+              >
+                {messageStats.unread}
               </p>
             </div>
             <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
               <p className="text-xs text-[#475569] mb-1">Sudah Dibaca</p>
               <p className="font-mono tabular-nums text-2xl font-semibold text-[#0F2744]">
-                {messageStats.dibaca}
+                {messageStats.read}
               </p>
             </div>
             <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
-              <p className="text-xs text-[#475569] mb-1">Sudah Ditindaklanjuti</p>
+              <p className="text-xs text-[#475569] mb-1">Sudah Dibalas</p>
               <p className="font-mono tabular-nums text-2xl font-semibold text-[#047857]">
-                {messageStats.selesai}
+                {messageStats.replied}
               </p>
             </div>
           </div>
 
-          {/* Inbox Filter + Refresh */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Inbox Filter + Search + Sort + Refresh */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div
               role="tablist"
               aria-label="Filter status pesan masuk"
@@ -501,9 +546,9 @@ export function AdminPanelView({
               {(
                 [
                   { id: 'all', label: 'Semua' },
-                  { id: 'Baru', label: 'Baru' },
-                  { id: 'Dibaca', label: 'Dibaca' },
-                  { id: 'Selesai', label: 'Selesai' },
+                  { id: 'unread', label: 'Belum Dibaca' },
+                  { id: 'read', label: 'Sudah Dibaca' },
+                  { id: 'replied', label: 'Sudah Dibalas' },
                 ] as const
               ).map((tab) => {
                 const active = messageFilter === tab.id;
@@ -526,21 +571,53 @@ export function AdminPanelView({
               })}
             </div>
 
-            <button
-              type="button"
-              disabled={isRefreshingMessages}
-              onClick={() => {
-                setIsRefreshingMessages(true);
-                void onRefreshMessages().finally(() => setIsRefreshingMessages(false));
-              }}
-              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium text-[#0F2744] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isRefreshingMessages ? 'animate-spin' : ''}`}
-                aria-hidden="true"
-              />
-              <span>Muat Ulang Pesan</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative w-full sm:w-64">
+                <label htmlFor="admin-message-search" className="sr-only">
+                  Cari pesan masuk
+                </label>
+                <Search
+                  className="w-4 h-4 text-[#475569] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <input
+                  id="admin-message-search"
+                  type="search"
+                  value={messageSearch}
+                  onChange={(e) => setMessageSearch(e.target.value)}
+                  placeholder="Cari nama, email, subjek..."
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-white border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:border-[#0F2744]"
+                />
+              </div>
+
+              <select
+                aria-label="Urutkan pesan berdasarkan tanggal"
+                value={messageSortOrder}
+                onChange={(e) =>
+                  setMessageSortOrder(e.target.value === 'oldest' ? 'oldest' : 'newest')
+                }
+                className="px-3 py-2 text-xs sm:text-sm bg-white border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:border-[#0F2744] cursor-pointer"
+              >
+                <option value="newest">Terbaru</option>
+                <option value="oldest">Terlama</option>
+              </select>
+
+              <button
+                type="button"
+                disabled={isRefreshingMessages}
+                onClick={() => {
+                  setIsRefreshingMessages(true);
+                  void onRefreshMessages().finally(() => setIsRefreshingMessages(false));
+                }}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium text-[#0F2744] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${isRefreshingMessages ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>Muat Ulang</span>
+              </button>
+            </div>
           </div>
 
           {/* Messages List */}
@@ -561,7 +638,7 @@ export function AdminPanelView({
                 const replyWaUrl = hasWhatsapp
                   ? buildWhatsAppUrl(
                       msg.whatsapp,
-                      `Halo ${msg.senderName}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${msg.subject}".`
+                      `Halo ${msg.name}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${msg.subject}".`
                     )
                   : '';
                 const hasValidEmail = Boolean(msg.email && isValidEmailAddress(msg.email));
@@ -570,38 +647,49 @@ export function AdminPanelView({
                   <article
                     key={msg.id}
                     data-testid={`admin-message-row-${msg.id}`}
-                    className="bg-white border border-[#E2E8F0] rounded-xl p-5 sm:p-6 space-y-4"
+                    className={`bg-white border rounded-xl p-5 sm:p-6 space-y-4 ${
+                      msg.status === 'unread' ? 'border-[#EA580C]/50' : 'border-[#E2E8F0]'
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
                       <div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-[#475569] mb-1">
                           <span
                             className={`font-semibold ${
-                              msg.status === 'Baru'
+                              msg.status === 'unread'
                                 ? 'text-[#C2410C]'
-                                : msg.status === 'Selesai'
+                                : msg.status === 'replied'
                                   ? 'text-[#047857]'
                                   : 'text-[#0F2744]'
                             }`}
                           >
-                            {msg.status}
+                            {getContactStatusLabel(msg.status)}
                           </span>
                           <span aria-hidden="true">·</span>
                           <span className="font-semibold text-[#0F2744]">{msg.subject}</span>
                           <span aria-hidden="true">·</span>
                           <span className="font-mono tabular-nums">
-                            {formatContactDate(msg.createdAt)}
+                            {formatContactDate(msg.created_at)}
                           </span>
                         </div>
-                        <h3 className="text-base font-bold text-[#0F2744]">{msg.senderName}</h3>
+                        <h3 className="text-base font-bold text-[#0F2744]">{msg.name}</h3>
                         <p className="text-xs text-[#475569] mt-0.5 font-mono tabular-nums">
+                          {hasValidEmail ? `Email: ${msg.email}` : ''}
+                          {hasValidEmail && hasWhatsapp ? ' · ' : ''}
                           {hasWhatsapp ? `WA: ${msg.whatsapp}` : ''}
-                          {hasWhatsapp && hasValidEmail && msg.email ? ' · ' : ''}
-                          {hasValidEmail && msg.email ? `Email: ${msg.email}` : ''}
                         </p>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMessageDetail(msg)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-md transition-colors whitespace-nowrap cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Lihat Detail</span>
+                        </button>
+
                         {hasWhatsapp && (
                           <a
                             href={replyWaUrl}
@@ -614,7 +702,7 @@ export function AdminPanelView({
                           </a>
                         )}
 
-                        {hasValidEmail && msg.email && (
+                        {hasValidEmail && (
                           <a
                             href={`mailto:${encodeURIComponent(msg.email)}?subject=${encodeURIComponent(`Balasan CISAGA HUB: ${msg.subject}`)}`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-md transition-colors whitespace-nowrap"
@@ -626,32 +714,47 @@ export function AdminPanelView({
                       </div>
                     </div>
 
-                    <p className="text-sm text-[#0F2744] leading-relaxed whitespace-pre-line">
+                    <p className="text-sm text-[#0F2744] leading-relaxed whitespace-pre-line line-clamp-3">
                       {msg.message}
                     </p>
 
                     <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        {msg.status !== 'Dibaca' && (
+                        {msg.status === 'unread' && (
                           <button
                             type="button"
-                            onClick={() => void onUpdateMessageStatus(msg.id, 'Dibaca')}
+                            onClick={() => void onUpdateMessageStatus(msg.id, 'read')}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0F2744] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] rounded-md cursor-pointer"
                           >
                             <Check className="w-3.5 h-3.5" aria-hidden="true" />
                             <span>Tandai Dibaca</span>
                           </button>
                         )}
-                        {msg.status !== 'Selesai' && (
+                        {msg.status !== 'replied' && (
                           <button
                             type="button"
-                            onClick={() => void onUpdateMessageStatus(msg.id, 'Selesai')}
+                            onClick={() => void onUpdateMessageStatus(msg.id, 'replied')}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#047857] bg-[#047857]/10 hover:bg-[#047857]/15 border border-[#047857]/30 rounded-md cursor-pointer"
                           >
                             <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                            <span>Tandai Selesai</span>
+                            <span>Tandai Sudah Dibalas</span>
                           </button>
                         )}
+                        <select
+                          aria-label={`Ubah status pesan dari ${msg.name}`}
+                          value={msg.status}
+                          onChange={(e) =>
+                            void onUpdateMessageStatus(
+                              msg.id,
+                              e.target.value as ContactMessageStatus
+                            )
+                          }
+                          className="px-2.5 py-1.5 text-xs font-medium text-[#0F2744] bg-[#F8FAFC] border border-[#E2E8F0] rounded-md cursor-pointer"
+                        >
+                          <option value="unread">Belum Dibaca</option>
+                          <option value="read">Sudah Dibaca</option>
+                          <option value="replied">Sudah Dibalas</option>
+                        </select>
                       </div>
 
                       {confirmDeleteMessageId === msg.id ? (
@@ -661,6 +764,7 @@ export function AdminPanelView({
                             onClick={() => {
                               void onDeleteMessage(msg.id);
                               setConfirmDeleteMessageId(null);
+                              if (selectedMessageId === msg.id) setSelectedMessageId(null);
                             }}
                             className="px-2.5 py-1 text-xs font-semibold text-white bg-[#B91C1C] hover:bg-[#991B1B] rounded cursor-pointer"
                           >
@@ -678,7 +782,7 @@ export function AdminPanelView({
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteMessageId(msg.id)}
-                          aria-label={`Hapus pesan dari ${msg.senderName}`}
+                          aria-label={`Hapus pesan dari ${msg.name}`}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#475569] hover:text-[#B91C1C] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] rounded-md cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
@@ -689,6 +793,136 @@ export function AdminPanelView({
                   </article>
                 );
               })}
+            </div>
+          )}
+
+          {/* Message Detail Modal */}
+          {selectedMessage && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-message-detail-title"
+              data-testid="admin-message-detail-modal"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F2744]/50 backdrop-blur-xs"
+            >
+              <div className="bg-white border border-[#E2E8F0] rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-7 space-y-5 shadow-xl">
+                <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
+                  <div>
+                    <p className="text-xs font-semibold text-[#C2410C] mb-1">
+                      Detail Pesan Pengunjung
+                    </p>
+                    <h2
+                      id="admin-message-detail-title"
+                      className="font-display text-xl font-bold text-[#0F2744]"
+                    >
+                      {selectedMessage.subject}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMessageId(null)}
+                    aria-label="Tutup detail pesan"
+                    className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#475569] hover:text-[#0F2744] cursor-pointer"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs">
+                  <div>
+                    <p className="text-[#475569]">Pengirim</p>
+                    <p className="font-semibold text-[#0F2744] text-sm mt-0.5">
+                      {selectedMessage.name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#475569]">Tanggal Dikirim</p>
+                    <p className="font-mono tabular-nums text-[#0F2744] mt-0.5">
+                      {formatContactDate(selectedMessage.created_at)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#475569]">Email</p>
+                    <p className="font-mono text-[#0F2744] mt-0.5">{selectedMessage.email || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[#475569]">Nomor WhatsApp</p>
+                    <p className="font-mono tabular-nums text-[#0F2744] mt-0.5">
+                      {selectedMessage.whatsapp || '-'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-[#475569] mb-2">Isi Pesan Lengkap</p>
+                  <div className="p-4 bg-white border border-[#E2E8F0] rounded-lg text-sm text-[#0F2744] leading-relaxed whitespace-pre-line">
+                    {selectedMessage.message}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label
+                      htmlFor="detail-status-select"
+                      className="text-xs font-semibold text-[#475569]"
+                    >
+                      Status:
+                    </label>
+                    <select
+                      id="detail-status-select"
+                      value={selectedMessage.status}
+                      onChange={(e) =>
+                        void onUpdateMessageStatus(
+                          selectedMessage.id,
+                          e.target.value as ContactMessageStatus
+                        )
+                      }
+                      className="px-3 py-1.5 text-xs font-semibold text-[#0F2744] bg-[#F8FAFC] border border-[#E2E8F0] rounded-md cursor-pointer"
+                    >
+                      <option value="unread">Belum Dibaca</option>
+                      <option value="read">Sudah Dibaca</option>
+                      <option value="replied">Sudah Dibalas</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedMessage.whatsapp.replace(/[^0-9]/g, '').length > 0 && (
+                      <a
+                        href={buildWhatsAppUrl(
+                          selectedMessage.whatsapp,
+                          `Halo ${selectedMessage.name}, kami dari pengelola CISAGA HUB menanggapi pesan Anda terkait "${selectedMessage.subject}".`
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-md transition-colors"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Balas WA</span>
+                      </a>
+                    )}
+                    {selectedMessage.email && isValidEmailAddress(selectedMessage.email) && (
+                      <a
+                        href={`mailto:${encodeURIComponent(selectedMessage.email)}?subject=${encodeURIComponent(`Balasan CISAGA HUB: ${selectedMessage.subject}`)}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0F2744] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-md transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Balas Email</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void onDeleteMessage(selectedMessage.id);
+                        setSelectedMessageId(null);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#B91C1C] bg-[#B91C1C]/5 hover:bg-[#B91C1C]/10 border border-[#B91C1C]/30 rounded-md cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
