@@ -1,6 +1,8 @@
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_DIMENSION = 1280;
+const FIRESTORE_MAX_DIMENSION = 800;
 const TARGET_MAX_RAW_BYTES = 1_500_000;
+const MAX_FIRESTORE_DATA_URL_LENGTH = 220_000;
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -17,17 +19,22 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function resizeImageDataUrlIfNeeded(dataUrl: string, mimeType: string): Promise<string> {
+function resizeImageDataUrlIfNeeded(
+  dataUrl: string,
+  mimeType: string,
+  maxDimension = MAX_DIMENSION,
+  quality = 0.86
+): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const { naturalWidth, naturalHeight } = img;
-      if (naturalWidth <= MAX_DIMENSION && naturalHeight <= MAX_DIMENSION) {
+      if (naturalWidth <= maxDimension && naturalHeight <= maxDimension && quality >= 0.86) {
         resolve(dataUrl);
         return;
       }
 
-      const scale = Math.min(MAX_DIMENSION / naturalWidth, MAX_DIMENSION / naturalHeight);
+      const scale = Math.min(1, maxDimension / naturalWidth, maxDimension / naturalHeight);
       const targetWidth = Math.max(1, Math.round(naturalWidth * scale));
       const targetHeight = Math.max(1, Math.round(naturalHeight * scale));
       const canvas = document.createElement('canvas');
@@ -40,7 +47,7 @@ function resizeImageDataUrlIfNeeded(dataUrl: string, mimeType: string): Promise<
       }
       ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
       const outputType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
-      resolve(canvas.toDataURL(outputType, 0.86));
+      resolve(canvas.toDataURL(outputType, quality));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
@@ -60,4 +67,22 @@ export async function prepareAdminImageDataUrl(file: File): Promise<string> {
     return resizeImageDataUrlIfNeeded(rawDataUrl, file.type);
   }
   return resizeImageDataUrlIfNeeded(rawDataUrl, 'image/jpeg');
+}
+
+export async function prepareFirestoreImageDataUrl(file: File): Promise<string> {
+  const prepared = await prepareAdminImageDataUrl(file);
+  if (prepared.length <= MAX_FIRESTORE_DATA_URL_LENGTH) {
+    return prepared;
+  }
+
+  const medium = await resizeImageDataUrlIfNeeded(prepared, 'image/jpeg', FIRESTORE_MAX_DIMENSION, 0.76);
+  if (medium.length <= MAX_FIRESTORE_DATA_URL_LENGTH) {
+    return medium;
+  }
+
+  const compact = await resizeImageDataUrlIfNeeded(prepared, 'image/jpeg', 600, 0.62);
+  if (compact.length > 255_000) {
+    throw new Error('Ukuran foto setelah kompresi terlalu besar. Gunakan foto lain yang lebih ringan.');
+  }
+  return compact;
 }
