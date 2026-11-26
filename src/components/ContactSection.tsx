@@ -31,7 +31,11 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
-    const validationErrors = validateContactMessageForm(form);
+    const normalizedForm: ContactMessageFormData = {
+      ...form,
+      subject: form.subject.trim() === '' ? CONTACT_TOPICS[0] : form.subject,
+    };
+    const validationErrors = validateContactMessageForm(normalizedForm);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       const firstError = Object.values(validationErrors).find(Boolean);
@@ -43,7 +47,7 @@ export function ContactSection({ onSubmitContactMessage }: ContactSectionProps) 
 
     setIsSubmitting(true);
     try {
-      const created = await onSubmitContactMessage(form);
+      const created = await onSubmitContactMessage(normalizedForm);
       setSentMessage(created);
       setForm(createInitialForm());
       setErrors({});

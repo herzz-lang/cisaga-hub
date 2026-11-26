@@ -42,12 +42,24 @@ const SAVED_STORAGE_KEY = 'hera_umkm_saved_v2';
 type AdminAuthMode = 'loading' | 'setup' | 'login';
 
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
-  try {
-    const data = (await response.json()) as { error?: string };
-    return typeof data.error === 'string' && data.error.trim().length > 0 ? data.error : fallback;
-  } catch {
-    return fallback;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      const data = (await response.json()) as { error?: string };
+      if (typeof data.error === 'string' && data.error.trim().length > 0) {
+        return data.error;
+      }
+    } catch {
+      // Fall through to status-based diagnostics
+    }
   }
+  if (response.status === 404 || response.status === 405) {
+    return 'Layanan server belum merespons permintaan ini. Silakan muat ulang halaman atau publikasikan ulang aplikasi.';
+  }
+  if (response.status >= 500) {
+    return `Server sedang mengalami gangguan sementara (kode ${response.status}). Silakan coba lagi sebentar lagi.`;
+  }
+  return fallback;
 }
 
 export default function App() {
@@ -189,6 +201,17 @@ export default function App() {
         });
         if (!res.ok) {
           setAuthMode('login');
+          setAuthError(
+            await readErrorMessage(res, 'Tidak dapat memeriksa status server autentikasi.')
+          );
+          return;
+        }
+        const contentType = res.headers.get('content-type') ?? '';
+        if (!contentType.includes('application/json')) {
+          setAuthMode('login');
+          setAuthError(
+            'Server backend tidak merespons format JSON. Pastikan aplikasi dijalankan dengan server Node aktif.'
+          );
           return;
         }
         const data = (await res.json()) as {

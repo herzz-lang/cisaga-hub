@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   CISAGA_VILLAGES,
@@ -152,11 +154,56 @@ function resolveSafeGalleryImages(rawGallery: unknown, primaryImage: string): st
   return result;
 }
 
-export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')) {
+export function isDirectoryWritable(dirPath: string): boolean {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    const probeFile = path.join(
+      dirPath,
+      `.write-probe-${process.pid}-${crypto.randomBytes(4).toString('hex')}`
+    );
+    fs.writeFileSync(probeFile, 'ok', 'utf8');
+    fs.unlinkSync(probeFile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveWritableDataDir(
+  preferredDir = path.resolve(process.cwd(), '.data'),
+  fallbackDir = path.join(os.tmpdir(), 'cisagahub-data')
+): string {
+  if (isDirectoryWritable(preferredDir)) {
+    return preferredDir;
+  }
+  if (isDirectoryWritable(fallbackDir)) {
+    // Seed read-only data files into writable fallback once if not present yet
+    try {
+      for (const fileName of ['umkm-listings.json', 'contacts.json', 'contact-messages.json', 'admin-auth.json']) {
+        const src = path.join(preferredDir, fileName);
+        const dest = path.join(fallbackDir, fileName);
+        if (fs.existsSync(src) && !fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+        }
+      }
+    } catch {
+      // Seed copy failure falls back cleanly to built-in seeds
+    }
+    return fallbackDir;
+  }
+  return preferredDir;
+}
+
+export function createServerStore(dataDirInput = path.resolve(process.cwd(), '.data')) {
+  const dataDir = resolveWritableDataDir(dataDirInput);
   const listingsPath = path.join(dataDir, 'umkm-listings.json');
   const authPath = path.join(dataDir, 'admin-auth.json');
   const contactsPath = path.join(dataDir, 'contacts.json');
   const legacyMessagesPath = path.join(dataDir, 'contact-messages.json');
+
+  let memoryListings: UmkmListing[] | null = null;
+  let memoryMessages: ContactMessage[] | null = null;
+  let memoryClaimedAuth: ClaimedAdminRecord | null = null;
 
   const ensureDataDir = () => {
     if (!fs.existsSync(dataDir)) {
@@ -165,10 +212,24 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
   };
 
   const writeJsonAtomic = (filePath: string, payload: unknown) => {
-    ensureDataDir();
-    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
-    fs.renameSync(tmpPath, filePath);
+    try {
+      ensureDataDir();
+      const serialized = JSON.stringify(payload, null, 2);
+      const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(tmpPath, serialized, 'utf8');
+      try {
+        fs.renameSync(tmpPath, filePath);
+      } catch {
+        fs.writeFileSync(filePath, serialized, 'utf8');
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          // Ignore tmp cleanup error
+        }
+      }
+    } catch {
+      // Keep in-memory state consistent even if disk write fails in constrained runtimes
+    }
   };
 
   const readListings = (): UmkmListing[] => {
@@ -192,18 +253,22 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
           if (migrated) {
             writeJsonAtomic(listingsPath, items);
           }
+          memoryListings = items;
           return items;
         }
       }
     } catch {
-      // Fall back to seed data if file is missing or unreadable
+      // Fall back to memory or seed data if file is missing or unreadable
     }
+    if (memoryListings) return memoryListings;
     const seeded = [...INITIAL_UMKM_LISTINGS];
+    memoryListings = seeded;
     writeJsonAtomic(listingsPath, seeded);
     return seeded;
   };
 
   const writeListings = (listings: UmkmListing[]) => {
+    memoryListings = listings;
     writeJsonAtomic(listingsPath, listings);
   };
 
@@ -256,22 +321,24 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
           if (targetPath === legacyMessagesPath && !fs.existsSync(contactsPath)) {
             writeJsonAtomic(contactsPath, normalized);
           }
+          memoryMessages = normalized;
           return normalized;
         }
       }
     } catch {
-      // Return empty inbox if file is missing or unreadable
+      // Return memory or empty inbox if file is missing or unreadable
     }
-    return [];
+    return memoryMessages ?? [];
   };
 
   const writeMessages = (messages: ContactMessage[]) => {
+    memoryMessages = messages;
     writeJsonAtomic(contactsPath, messages);
   };
 
   const readClaimedAuth = (): ClaimedAdminRecord | null => {
     try {
-      if (!fs.existsSync(authPath)) return null;
+      if (!fs.existsSync(authPath)) return memoryClaimedAuth;
       const raw = fs.readFileSync(authPath, 'utf8');
       const parsed = JSON.parse(raw) as Partial<ClaimedAdminRecord>;
       if (
@@ -279,15 +346,17 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
         typeof parsed.passwordHash === 'string' &&
         parsed.passwordHash.includes(':')
       ) {
-        return {
+        const record: ClaimedAdminRecord = {
           username: parsed.username,
           passwordHash: parsed.passwordHash,
           claimedAt: typeof parsed.claimedAt === 'string' ? parsed.claimedAt : '',
         };
+        memoryClaimedAuth = record;
+        return record;
       }
-      return null;
+      return memoryClaimedAuth;
     } catch {
-      return null;
+      return memoryClaimedAuth;
     }
   };
 
@@ -339,6 +408,7 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
       passwordHash: hashPassword(password),
       claimedAt: new Date().toISOString(),
     };
+    memoryClaimedAuth = record;
     writeJsonAtomic(authPath, record);
     return { username: config.username };
   };
@@ -758,6 +828,7 @@ export function createServerStore(dataDir = path.resolve(process.cwd(), '.data')
   };
 
   return {
+    getDataDir: () => dataDir,
     getAuthConfig,
     claimInitialPassword,
     verifyLogin,

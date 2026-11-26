@@ -10,7 +10,7 @@ import {
   verifyScryptPassword,
   verifySessionToken,
 } from './authUtils.ts';
-import { createServerStore } from './store.ts';
+import { createServerStore, resolveWritableDataDir } from './store.ts';
 
 test('scrypt password hashing and verification succeed only for matching password', () => {
   const hashed = hashPassword('CisagaDev#2026');
@@ -356,4 +356,23 @@ test('server store creates, sanitizes, sorts, updates status (unread/read/replie
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('resolveWritableDataDir falls back to writable directory when preferred path is unwritable', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cisaga-dir-fallback-'));
+  try {
+    const blockedPreferred = path.join(tempRoot, 'blocked-file');
+    fs.writeFileSync(blockedPreferred, 'read-only-placeholder', 'utf8');
+    const fallbackDir = path.join(tempRoot, 'writable-fallback');
+
+    const resolved = resolveWritableDataDir(blockedPreferred, fallbackDir);
+    assert.equal(resolved, fallbackDir);
+    assert.equal(fs.existsSync(fallbackDir), true);
+
+    const store = createServerStore(blockedPreferred);
+    assert.ok(store.getPublicActiveListings().length >= 6);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 

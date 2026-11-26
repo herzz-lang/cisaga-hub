@@ -12,16 +12,47 @@ import { createServerStore, StoreHttpError } from './server/store.ts';
 import { resolveSafeUploadFilePath, saveValidatedImageUpload } from './server/uploadUtils.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
-const SESSION_SECRET =
-  process.env.ADMIN_SESSION_SECRET && process.env.ADMIN_SESSION_SECRET.trim().length > 0
-    ? process.env.ADMIN_SESSION_SECRET.trim()
-    : crypto.randomBytes(32).toString('hex');
-
 const DATA_DIR =
   process.env.DATA_DIR && process.env.DATA_DIR.trim().length > 0
     ? path.resolve(process.cwd(), process.env.DATA_DIR.trim())
     : undefined;
 const store = createServerStore(DATA_DIR);
+const RESOLVED_DATA_DIR = store.getDataDir();
+const UPLOADS_DIR = path.join(RESOLVED_DATA_DIR, 'uploads');
+
+function resolveSessionSecret(dataDir: string): string {
+  const explicitSecret = process.env.ADMIN_SESSION_SECRET?.trim();
+  if (explicitSecret) {
+    return explicitSecret;
+  }
+
+  const envPassword = process.env.ADMIN_PASSWORD?.trim();
+  if (envPassword) {
+    const envUsername = (process.env.ADMIN_USERNAME ?? '').trim() || 'admin';
+    return crypto
+      .createHmac('sha256', 'cisagahub-derived-session-key-v1')
+      .update(`${envUsername.toLowerCase()}:${envPassword}`)
+      .digest('hex');
+  }
+
+  const secretPath = path.join(dataDir, '.session-secret');
+  try {
+    if (fs.existsSync(secretPath)) {
+      const existing = fs.readFileSync(secretPath, 'utf8').trim();
+      if (existing.length >= 32) {
+        return existing;
+      }
+    }
+    const generated = crypto.randomBytes(32).toString('hex');
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(secretPath, generated, { encoding: 'utf8', mode: 0o600 });
+    return generated;
+  } catch {
+    return crypto.randomBytes(32).toString('hex');
+  }
+}
+
+const SESSION_SECRET = resolveSessionSecret(RESOLVED_DATA_DIR);
 const revokedTokens = new Set<string>();
 
 interface RateLimitEntry {
@@ -57,9 +88,9 @@ function clearAuthAttempts(ipKey: string): void {
 }
 
 const contactSubmissions = new Map<string, RateLimitEntry>();
-const MAX_CONTACT_SUBMISSIONS = 20;
+const MAX_CONTACT_SUBMISSIONS = 60;
 const recentContactDigests = new Map<string, number>();
-const DUPLICATE_COOLDOWN_MS = 60 * 1000;
+const DUPLICATE_COOLDOWN_MS = 15 * 1000;
 
 function checkAndRecordContactRateLimit(ipKey: string): boolean {
   const now = Date.now();
@@ -75,23 +106,28 @@ function checkAndRecordContactRateLimit(ipKey: string): boolean {
   return true;
 }
 
-function isDuplicateContactBurst(ipKey: string, body: Record<string, unknown>): boolean {
-  const now = Date.now();
-  const digest = crypto
+function buildContactDigest(ipKey: string, body: Record<string, unknown>): string {
+  return crypto
     .createHash('sha256')
     .update(
       `${ipKey}|${String(body.email ?? '').trim().toLowerCase()}|${String(body.subject ?? '').trim()}|${String(body.message ?? '').trim()}`
     )
     .digest('hex');
-  const expiresAt = recentContactDigests.get(digest);
+}
+
+function isDuplicateContactBurst(ipKey: string, body: Record<string, unknown>): boolean {
+  const now = Date.now();
   for (const [key, exp] of recentContactDigests.entries()) {
     if (now >= exp) recentContactDigests.delete(key);
   }
-  if (expiresAt && now < expiresAt) {
-    return true;
-  }
-  recentContactDigests.set(digest, now + DUPLICATE_COOLDOWN_MS);
-  return false;
+  const digest = buildContactDigest(ipKey, body);
+  const expiresAt = recentContactDigests.get(digest);
+  return Boolean(expiresAt && now < expiresAt);
+}
+
+function recordDuplicateContactDigest(ipKey: string, body: Record<string, unknown>): void {
+  const digest = buildContactDigest(ipKey, body);
+  recentContactDigests.set(digest, Date.now() + DUPLICATE_COOLDOWN_MS);
 }
 
 function getEnvCredentials() {
@@ -133,7 +169,7 @@ function handleApiError(err: unknown, res: Response): void {
 
 async function startServer() {
   const app = express();
-  app.set('trust proxy', 1);
+  app.set('trust proxy', 2);
   app.use(express.json({ limit: '4mb' }));
 
   app.get('/api/health', (_req, res) => {
@@ -142,7 +178,7 @@ async function startServer() {
 
   // Serve validated uploaded UMKM images safely before SPA fallback
   app.get('/uploads/:filename', (req, res) => {
-    const resolved = resolveSafeUploadFilePath(req.params.filename);
+    const resolved = resolveSafeUploadFilePath(req.params.filename, UPLOADS_DIR);
     if (!resolved) {
       res.status(404).send('Foto tidak ditemukan.');
       return;
@@ -186,12 +222,13 @@ async function startServer() {
       req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
     if (isDuplicateContactBurst(ipKey, payload)) {
       res.status(429).json({
-        error: 'Pesan yang sama baru saja dikirim. Mohon tunggu 1 menit sebelum mengirim ulang.',
+        error: 'Pesan yang sama baru saja dikirim. Mohon tunggu 15 detik sebelum mengirim ulang.',
       });
       return;
     }
     try {
       const created = store.createContactMessage(payload);
+      recordDuplicateContactDigest(ipKey, payload);
       res.status(201).json({ contact: created, message: created });
     } catch (err) {
       handleApiError(err, res);
@@ -291,7 +328,7 @@ async function startServer() {
   app.post('/api/admin/uploads', requireDeveloperAuth, (req, res) => {
     try {
       const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
-      const saved = saveValidatedImageUpload(dataUrl);
+      const saved = saveValidatedImageUpload(dataUrl, UPLOADS_DIR);
       res.status(201).json({ url: saved.url, sizeBytes: saved.sizeBytes });
     } catch (err) {
       res.status(400).json({
@@ -420,6 +457,28 @@ async function startServer() {
   app.patch('/api/admin/messages/:id/status', requireDeveloperAuth, handleAdminUpdateContactStatus);
   app.delete('/api/admin/contacts/:id', requireDeveloperAuth, handleAdminDeleteContact);
   app.delete('/api/admin/messages/:id', requireDeveloperAuth, handleAdminDeleteContact);
+
+  // Never fall through to SPA HTML on unknown /api/* endpoints
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'Endpoint API tidak ditemukan.' });
+  });
+
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api/')) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'type' in err &&
+        (err as { type?: string }).type === 'entity.parse.failed'
+      ) {
+        res.status(400).json({ error: 'Format data permintaan JSON tidak valid.' });
+        return;
+      }
+      res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
+      return;
+    }
+    next(err);
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
