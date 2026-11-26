@@ -48,4 +48,9 @@ test('firestore.rules enforces Dirty Dozen security invariants on contacts and u
     rulesSource,
     /\(incoming\(\)\.tier == 'reguler' && incoming\(\)\.status == 'Menunggu Verifikasi'\)/
   );
+
+  // 6. Strict single-Google-account admin lock (no /admins delegation escalation)
+  assert.match(rulesSource, /request\.auth\.token\.email == 'herzz@smkn2banjar-jabar\.sch\.id'/);
+  assert.match(rulesSource, /function isAdmin\(\) \{\s*return isBootstrappedAdmin\(\);\s*\}/);
+  assert.match(rulesSource, /match \/admins\/\{userId\} \{\s*allow read, write: if false;\s*\}/);
 });

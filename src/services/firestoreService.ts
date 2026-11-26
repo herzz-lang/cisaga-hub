@@ -3,7 +3,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -204,20 +203,16 @@ function mapDocToContact(id: string, data: DocumentData): ContactMessage {
   };
 }
 
+export function isSingleAuthorizedGoogleAccount(user: User | null): boolean {
+  if (!user || !user.email) return false;
+  return (
+    user.email.trim().toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase() &&
+    Boolean(user.emailVerified)
+  );
+}
+
 export async function isAuthorizedAdminUser(user: User | null): Promise<boolean> {
-  if (!user) return false;
-  if (
-    user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase() &&
-    user.emailVerified
-  ) {
-    return true;
-  }
-  try {
-    const snap = await getDoc(doc(db, 'admins', user.uid));
-    return snap.exists();
-  } catch {
-    return false;
-  }
+  return isSingleAuthorizedGoogleAccount(user);
 }
 
 export function subscribePublicActiveListings(

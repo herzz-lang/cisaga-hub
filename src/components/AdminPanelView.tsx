@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  Award,
   Check,
   CheckCheck,
   Edit3,
@@ -13,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Store,
   Trash2,
   Upload,
   X,
@@ -31,9 +33,12 @@ import type {
   VillageInfo,
 } from '../types/umkm';
 import {
+  type AdminFilterTab,
   buildWhatsAppUrl,
+  filterAdminListings,
   formatContactDate,
   formatRupiah,
+  getAdminPortalSummary,
   getContactStatusLabel,
   getListingAllImages,
   isValidEmailAddress,
@@ -58,7 +63,6 @@ interface AdminPanelViewProps {
   onLogout: () => Promise<void>;
 }
 
-type AdminFilterTab = 'all' | 'premium' | 'reguler' | 'pending';
 type AdminWorkspaceTab = 'umkm' | 'messages';
 
 const BUSINESS_CATEGORIES: BusinessCategory[] = [
@@ -126,6 +130,11 @@ export function AdminPanelView({
   const [uploadingTarget, setUploadingTarget] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const portalSummary = useMemo(
+    () => getAdminPortalSummary(listings, messages),
+    [listings, messages]
+  );
+
   const metrics = useMemo(() => {
     const total = listings.length;
     const premiumActive = listings.filter(
@@ -185,21 +194,10 @@ export function AdminPanelView({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedMessageId]);
 
-  const filteredRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return listings.filter((item) => {
-      if (filterTab === 'premium' && item.tier !== 'premium') return false;
-      if (filterTab === 'reguler' && item.tier !== 'reguler') return false;
-      if (filterTab === 'pending' && item.status !== 'Menunggu Verifikasi') return false;
-      if (q === '') return true;
-      return (
-        item.businessName.toLowerCase().includes(q) ||
-        item.productName.toLowerCase().includes(q) ||
-        item.ownerName.toLowerCase().includes(q) ||
-        item.village.toLowerCase().includes(q)
-      );
-    });
-  }, [listings, filterTab, searchQuery]);
+  const filteredRows = useMemo(
+    () => filterAdminListings(listings, filterTab, searchQuery),
+    [listings, filterTab, searchQuery]
+  );
 
   const openCreateForm = () => {
     setEditingId(null);
@@ -448,6 +446,81 @@ export function AdminPanelView({
             <span>Keluar Admin</span>
           </button>
         </div>
+      </div>
+
+      {/* Top Executive Summary Cards */}
+      <div
+        data-testid="admin-summary-cards"
+        aria-label="Ringkasan kinerja portal CISAGA HUB"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5"
+      >
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-[#475569] mb-1">Total UMKM Aktif</p>
+            <p
+              data-testid="summary-active-umkm"
+              className="font-mono tabular-nums text-3xl font-bold text-[#0F2744]"
+            >
+              {portalSummary.activeUmkmCount}
+            </p>
+            <p className="text-xs text-[#64748B] mt-1.5">
+              Usaha aktif tayang di etalase publik
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-[#0F2744]/8 text-[#0F2744] flex items-center justify-center shrink-0">
+            <Store className="w-5 h-5" aria-hidden="true" />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setWorkspaceTab('messages');
+            setMessageFilter('unread');
+          }}
+          className="text-left bg-white border border-[#E2E8F0] hover:border-[#EA580C]/50 rounded-xl p-5 flex items-start justify-between gap-4 transition-colors cursor-pointer"
+        >
+          <div>
+            <p className="text-xs font-medium text-[#475569] mb-1">Pesan Baru Belum Dibaca</p>
+            <p
+              data-testid="summary-unread-messages"
+              className="font-mono tabular-nums text-3xl font-bold text-[#EA580C]"
+            >
+              {portalSummary.unreadMessagesCount}
+            </p>
+            <p className="text-xs text-[#64748B] mt-1.5">
+              Klik untuk buka kotak masuk belum dibaca
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-[#EA580C]/10 text-[#C2410C] flex items-center justify-center shrink-0">
+            <Mail className="w-5 h-5" aria-hidden="true" />
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setWorkspaceTab('umkm');
+            setFilterTab('premium');
+          }}
+          className="text-left bg-white border border-[#E2E8F0] hover:border-[#047857]/50 rounded-xl p-5 flex items-start justify-between gap-4 transition-colors cursor-pointer"
+        >
+          <div>
+            <p className="text-xs font-medium text-[#475569] mb-1">UMKM Kategori Premium</p>
+            <p
+              data-testid="summary-premium-umkm"
+              className="font-mono tabular-nums text-3xl font-bold text-[#047857]"
+            >
+              {portalSummary.premiumUmkmCount}
+            </p>
+            <p className="text-xs text-[#64748B] mt-1.5">
+              Mitra prioritas promosi paling atas
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-[#047857]/10 text-[#047857] flex items-center justify-center shrink-0">
+            <Award className="w-5 h-5" aria-hidden="true" />
+          </div>
+        </button>
       </div>
 
       {/* Workspace Switcher: Data UMKM vs Kotak Masuk Pesan */}
@@ -1614,22 +1687,45 @@ export function AdminPanelView({
           })}
         </div>
 
-        <div className="relative w-full md:w-72">
-          <label htmlFor="admin-search" className="sr-only">
-            Cari data UMKM di panel admin
-          </label>
-          <Search
-            className="w-4 h-4 text-[#475569] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-            aria-hidden="true"
-          />
-          <input
-            id="admin-search"
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari usaha, produk, atau desa..."
-            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-[#E2E8F0] rounded-lg text-[#0F2744] focus:outline-none focus:border-[#0F2744]"
-          />
+        <div className="w-full md:w-80 space-y-1">
+          <div className="relative">
+            <label htmlFor="admin-search" className="sr-only">
+              Cari UMKM berdasarkan nama usaha secara langsung
+            </label>
+            <Search
+              className="w-4 h-4 text-[#475569] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <input
+              id="admin-search"
+              data-testid="admin-live-search"
+              type="text"
+              autoComplete="off"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Ketik nama usaha untuk cari cepat..."
+              className="w-full pl-9 pr-9 py-2 text-sm bg-white border border-[#E2E8F0] rounded-lg text-[#0F2744] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0F2744]"
+            />
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                data-testid="admin-search-clear"
+                aria-label="Hapus pencarian nama usaha"
+                onClick={() => setSearchQuery('')}
+                className="w-6 h-6 inline-flex items-center justify-center rounded text-[#64748B] hover:text-[#0F2744] absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          <p
+            data-testid="admin-live-search-status"
+            aria-live="polite"
+            className="text-[11px] text-[#64748B]"
+          >
+            Menampilkan {filteredRows.length} dari {listings.length} UMKM
+            {searchQuery.trim() ? ` untuk "${searchQuery.trim()}"` : ''}
+          </p>
         </div>
       </div>
 
@@ -1641,15 +1737,31 @@ export function AdminPanelView({
               Tidak ada data UMKM pada filter ini
             </p>
             <p className="text-sm text-[#475569] mb-5">
-              Tambahkan UMKM baru atau ubah filter pencarian untuk melihat seluruh daftar.
+              {searchQuery.trim()
+                ? `Tidak ditemukan UMKM dengan nama "${searchQuery.trim()}". Coba kata kunci lain atau reset pencarian.`
+                : 'Tambahkan UMKM baru atau ubah filter pencarian untuk melihat seluruh daftar.'}
             </p>
-            <button
-              type="button"
-              onClick={openCreateForm}
-              className="px-4 py-2 text-sm font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-lg cursor-pointer"
-            >
-              Tambah UMKM Baru
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              {(searchQuery.trim() !== '' || filterTab !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterTab('all');
+                  }}
+                  className="px-4 py-2 text-sm font-semibold text-[#0F2744] bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] rounded-lg cursor-pointer"
+                >
+                  Reset Pencarian &amp; Filter
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openCreateForm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#EA580C] hover:bg-[#C2410C] rounded-lg cursor-pointer"
+              >
+                Tambah UMKM Baru
+              </button>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

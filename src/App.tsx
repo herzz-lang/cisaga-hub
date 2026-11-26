@@ -145,20 +145,41 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firebase Auth listener
+  // Firebase Auth listener - strictly allow only BOOTSTRAPPED_ADMIN_EMAIL
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
       if (!user) {
+        setFirebaseUser(null);
         setIsAuthorizedAdmin(false);
         setAdminListings([]);
         setAdminMessages([]);
         setIsAuthReady(true);
         return;
       }
+
       setIsAuthReady(false);
-      void isAuthorizedAdminUser(user).then((allowed) => {
-        setIsAuthorizedAdmin(allowed);
+      void isAuthorizedAdminUser(user).then(async (allowed) => {
+        if (!allowed) {
+          const deniedEmail = user.email ?? 'Akun ini';
+          try {
+            await signOut(auth);
+          } catch {
+            // Ignore sign-out errors during unauthorized cleanup
+          }
+          setFirebaseUser(null);
+          setIsAuthorizedAdmin(false);
+          setAdminListings([]);
+          setAdminMessages([]);
+          setAuthError(
+            `Akses ditolak. Akun ${deniedEmail} tidak diizinkan. Sistem admin hanya dapat diakses oleh akun Google herzz@smkn2banjar-jabar.sch.id.`
+          );
+          setIsAuthReady(true);
+          return;
+        }
+
+        setFirebaseUser(user);
+        setIsAuthorizedAdmin(true);
+        setAuthError(null);
         setIsAuthReady(true);
       });
     });
@@ -258,8 +279,12 @@ export default function App() {
       const result = await signInWithPopup(auth, googleProvider);
       const allowed = await isAuthorizedAdminUser(result.user);
       if (!allowed) {
+        const deniedEmail = result.user.email ?? 'Akun ini';
+        await signOut(auth);
+        setIsAuthorizedAdmin(false);
+        setFirebaseUser(null);
         setAuthError(
-          `Akun ${result.user.email ?? 'ini'} tidak memiliki hak akses Admin CISAGA HUB.`
+          `Akses ditolak. Akun ${deniedEmail} tidak diizinkan. Gunakan akun Google resmi herzz@smkn2banjar-jabar.sch.id.`
         );
       } else {
         setFeedbackMessage('Login admin berhasil.');

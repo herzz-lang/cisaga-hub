@@ -2,6 +2,7 @@ import { UMKM_IMAGE_PRESETS } from '../data/cisagaData';
 import type {
   AdminUmkmFormData,
   BusinessCategory,
+  ContactMessage,
   ContactMessageFormData,
   ContactTopic,
   FreeRegistrationFormData,
@@ -550,3 +551,59 @@ export function isDeveloperAdminPath(pathname: string): boolean {
   return normalized === '/admin' || normalized === '/portal-developer';
 }
 
+export type AdminFilterTab = 'all' | 'premium' | 'reguler' | 'pending';
+
+export interface AdminPortalSummary {
+  activeUmkmCount: number;
+  unreadMessagesCount: number;
+  premiumUmkmCount: number;
+}
+
+export function getAdminPortalSummary(
+  listings: UmkmListing[],
+  messages: ContactMessage[]
+): AdminPortalSummary {
+  return {
+    activeUmkmCount: listings.filter((item) => item.status === 'Aktif').length,
+    unreadMessagesCount: messages.filter((msg) => msg.status === 'unread').length,
+    premiumUmkmCount: listings.filter((item) => item.tier === 'premium').length,
+  };
+}
+
+export function filterAdminListings(
+  listings: UmkmListing[],
+  filterTab: AdminFilterTab,
+  searchQuery: string
+): UmkmListing[] {
+  const q = searchQuery.trim().toLowerCase();
+
+  const tabFiltered = listings.filter((item) => {
+    if (filterTab === 'premium' && item.tier !== 'premium') return false;
+    if (filterTab === 'reguler' && item.tier !== 'reguler') return false;
+    if (filterTab === 'pending' && item.status !== 'Menunggu Verifikasi') return false;
+    return true;
+  });
+
+  if (q === '') {
+    return tabFiltered;
+  }
+
+  const scored: { item: UmkmListing; rank: number }[] = [];
+  for (const item of tabFiltered) {
+    const businessLower = item.businessName.toLowerCase();
+    if (businessLower.startsWith(q)) {
+      scored.push({ item, rank: 0 });
+    } else if (businessLower.includes(q)) {
+      scored.push({ item, rank: 1 });
+    } else if (
+      item.productName.toLowerCase().includes(q) ||
+      item.ownerName.toLowerCase().includes(q) ||
+      item.village.toLowerCase().includes(q)
+    ) {
+      scored.push({ item, rank: 2 });
+    }
+  }
+
+  scored.sort((a, b) => a.rank - b.rank);
+  return scored.map((entry) => entry.item);
+}

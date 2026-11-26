@@ -7,8 +7,10 @@ import {
   createFreeListingEntry,
   cycleListingStatus,
   deleteListingById,
+  filterAdminListings,
   filterAndSortListings,
   formatRupiah,
+  getAdminPortalSummary,
   getListingAllImages,
   getPremiumTopListings,
   isDeveloperAdminPath,
@@ -258,5 +260,121 @@ test('isDeveloperAdminPath grants admin view entry only on dedicated developer p
   assert.equal(isDeveloperAdminPath('/admin'), true);
   assert.equal(isDeveloperAdminPath('/admin/'), true);
   assert.equal(isDeveloperAdminPath('/portal-developer'), true);
+});
+
+test('getAdminPortalSummary calculates active UMKM, unread messages, and premium UMKM counts', () => {
+  const pendingFree = createFreeListingEntry({
+    businessName: 'Basreng Teh Ani',
+    ownerName: 'Teh Ani',
+    village: 'Desa Cisaga',
+    category: 'Kuliner',
+    whatsapp: '081211112222',
+    signatureProduct: 'Basreng Pedas Daun Jeruk',
+    estimatedPrice: '15000',
+  });
+  const inactivePremium = createAdminListingEntry({
+    businessName: 'Batik Nonaktif',
+    ownerName: 'Pak Dedi',
+    productName: 'Kain Batik',
+    category: 'Busana',
+    village: 'Desa Mekarmukti',
+    whatsapp: '081333334444',
+    tier: 'premium',
+    status: 'Nonaktif',
+    price: '120000',
+    unitLabel: 'Lembar',
+    shortDescription: 'Batik tulis motif khas Cisaga untuk contoh status nonaktif.',
+    image: '',
+  });
+  const sampleListings = [...INITIAL_UMKM_LISTINGS, pendingFree, inactivePremium];
+  const sampleMessages = [
+    {
+      id: 'm1',
+      name: 'Budi',
+      email: 'budi@contoh.id',
+      whatsapp: '081200000001',
+      subject: 'Tanya Promo',
+      message: 'Halo admin',
+      status: 'unread' as const,
+      created_at: '2026-11-26T00:00:00.000Z',
+    },
+    {
+      id: 'm2',
+      name: 'Sari',
+      email: 'sari@contoh.id',
+      whatsapp: '',
+      subject: 'Kemitraan',
+      message: 'Ingin bergabung',
+      status: 'unread' as const,
+      created_at: '2026-11-26T00:05:00.000Z',
+    },
+    {
+      id: 'm3',
+      name: 'Rudi',
+      email: 'rudi@contoh.id',
+      whatsapp: '',
+      subject: 'Sudah Dibaca',
+      message: 'Terima kasih',
+      status: 'read' as const,
+      created_at: '2026-11-25T10:00:00.000Z',
+    },
+  ];
+
+  const summary = getAdminPortalSummary(sampleListings, sampleMessages);
+  const expectedActive = INITIAL_UMKM_LISTINGS.filter((item) => item.status === 'Aktif').length;
+  const expectedPremium =
+    INITIAL_UMKM_LISTINGS.filter((item) => item.tier === 'premium').length + 1;
+
+  assert.equal(summary.activeUmkmCount, expectedActive);
+  assert.equal(summary.unreadMessagesCount, 2);
+  assert.equal(summary.premiumUmkmCount, expectedPremium);
+});
+
+test('filterAdminListings performs real-time live search prioritizing businessName matches across tabs', () => {
+  const customA = createAdminListingEntry({
+    businessName: 'Saung Madu Cisaga',
+    ownerName: 'Kang Asep',
+    productName: 'Madu Hutan Murni',
+    category: 'Agribisnis',
+    village: 'Desa Danasari',
+    whatsapp: '081277778888',
+    tier: 'premium',
+    status: 'Aktif',
+    price: '75000',
+    unitLabel: 'Botol 500ml',
+    shortDescription: 'Madu hutan alami dari peternakan lebah Kecamatan Cisaga.',
+    image: '',
+  });
+  const customB = createAdminListingEntry({
+    businessName: 'Keripik Mak Enah',
+    ownerName: 'Bu Enah',
+    productName: 'Keripik Pisang Madu',
+    category: 'Kuliner',
+    village: 'Desa Cisaga',
+    whatsapp: '081299990000',
+    tier: 'reguler',
+    status: 'Aktif',
+    price: '18000',
+    unitLabel: 'Pouch 200g',
+    shortDescription: 'Keripik pisang renyah dengan baluran madu manis alami.',
+    image: '',
+  });
+
+  const combined = [customB, customA];
+
+  // Live typing 'saung' matches businessName immediately
+  const byBusinessPrefix = filterAdminListings(combined, 'all', 'sau');
+  assert.equal(byBusinessPrefix.length, 1);
+  assert.equal(byBusinessPrefix[0].businessName, 'Saung Madu Cisaga');
+
+  // Typing 'madu' matches both, ranking businessName match ('Saung Madu Cisaga') ahead of productName match
+  const rankedByBusinessName = filterAdminListings(combined, 'all', 'madu');
+  assert.equal(rankedByBusinessName.length, 2);
+  assert.equal(rankedByBusinessName[0].businessName, 'Saung Madu Cisaga');
+
+  // Combining filterTab with live search query
+  const regulerOnly = filterAdminListings(combined, 'reguler', 'madu');
+  assert.equal(regulerOnly.length, 1);
+  assert.equal(regulerOnly[0].businessName, 'Keripik Mak Enah');
 });
 
